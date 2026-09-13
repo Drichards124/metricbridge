@@ -160,7 +160,7 @@ the capability still gets the `no_match` catalog reply.
 Split into **1.4a** (core: simple metrics, N:1 LEFT joins, WHERE/HAVING placement, time bucketing,
 half-open date bounds, injected row limit, per-dialect rendering, bound parameters) and **1.4b**
 (ratio CTEs and snapshot `window_choice`) and **1.4c** (cumulative windows with lookback widening)
-— one PR each, the last closing #6 (D16). Cumulative is split off because portable trailing windows
+— one PR each, the last closing #6 (D16). Delivered 13 Sep 2026. Cumulative is split off because portable trailing windows
 need either a non-portable `RANGE INTERVAL` frame or an explicit period join, and that decision
 deserves its own review.
 Dialect-aware compilation through sqlglot typed expressions: half-open date intervals

@@ -8,6 +8,10 @@ All notable changes to MetricBridge are documented here. The format follows
 
 ### Added
 
+- Cumulative metrics compile: trailing windows and grain-to-date, as anchor periods joined to the
+  rows their window covers. The scan is widened to cover the lookback, and `CompiledQuery` reports
+  both the output window and the scan window.
+
 - Ratio metrics compile to two aggregates divided after grouping, joined on every group key. A zero
   denominator yields null rather than zero.
 - Snapshot metrics with a declared roll-up compile to one row per group per period, chosen by the

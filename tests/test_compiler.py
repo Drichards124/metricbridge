@@ -9,6 +9,7 @@ import re
 from datetime import date
 from pathlib import Path
 
+import duckdb
 import pytest
 from sqlglot import parse_one
 
@@ -261,3 +262,135 @@ def test_every_metric_shape_compiles_to_one_parseable_statement(manifest):
             query = compile_query(manifest, validate(manifest, request), dialect=dialect)
             assert parse_one(query.sql, dialect=dialect).key == "select", f"{name}/{dialect}"
             assert ";" not in query.sql
+
+
+class TestCumulativeMetrics:
+    def test_a_trailing_window_joins_rows_to_every_anchor_period(self, manifest):
+        query = compiled(manifest, metric="trailing_12m_revenue", time_grain="month")
+        assert flat(query.sql) == (
+            "WITH periods AS ("
+            "SELECT DISTINCT DATE_TRUNC('MONTH', subscription_revenue.revenue_date) AS period "
+            "FROM billing.fct_subscription_revenue_daily AS subscription_revenue "
+            "WHERE subscription_revenue.revenue_date >= $start_date "
+            "AND subscription_revenue.revenue_date < $end_date"
+            "), measured AS ("
+            "SELECT subscription_revenue.revenue_date AS occurred_at, "
+            "subscription_revenue.amount AS value "
+            "FROM billing.fct_subscription_revenue_daily AS subscription_revenue "
+            "WHERE subscription_revenue.revenue_date >= $scan_start "
+            "AND subscription_revenue.revenue_date < $end_date"
+            ") "
+            "SELECT periods.period AS period, SUM(measured.value) AS trailing_12m_revenue "
+            "FROM periods JOIN measured "
+            "ON measured.occurred_at >= periods.period - INTERVAL 11 MONTH "
+            "AND measured.occurred_at < periods.period + INTERVAL 1 MONTH "
+            "GROUP BY periods.period "
+            "LIMIT 100"
+        )
+
+    def test_the_scan_reads_back_further_than_the_answer(self, manifest):
+        """A trailing-twelve-month figure for Q3 must read a year: pruning to the output window
+        returns a wrong number, which is worse than the wide scan the rule prevents."""
+        query = compiled(manifest, metric="trailing_12m_revenue", time_grain="month")
+        assert query.parameters["scan_start"] == date(2025, 8, 1)
+        assert query.parameters["start_date"] == date(2026, 7, 1)
+        assert query.output_window == (date(2026, 7, 1), date(2026, 10, 1))
+        assert query.scan_window == (date(2025, 8, 1), date(2026, 10, 1))
+
+    def test_grain_to_date_anchors_at_the_start_of_each_period(self, manifest):
+        sql = flat(compiled(manifest, metric="revenue_month_to_date", time_grain="month").sql)
+        assert "ON measured.occurred_at >= periods.period" in sql
+        assert "measured.occurred_at < periods.period + INTERVAL 1 MONTH" in sql
+        assert "INTERVAL 11" not in sql
+
+    def test_without_a_grain_one_window_ending_at_the_range_end(self, manifest):
+        query = compiled(manifest, metric="trailing_12m_revenue")
+        sql = flat(query.sql)
+        assert "periods" not in sql
+        assert "SUM(subscription_revenue.amount) AS trailing_12m_revenue" in sql
+        # The window ends where the request ends, so twelve months back is October, not August:
+        # anchoring it to the request start would answer a different question.
+        assert query.parameters["start_date"] == date(2025, 10, 1)
+        assert query.scan_window == (date(2025, 10, 1), date(2026, 10, 1))
+
+    def test_anchors_are_never_grouped_by_a_dimension(self, manifest):
+        """`periods` must be the bucket alone: grouping it by a cut means a country with no rows
+        that month stops anchoring, and its trailing total disappears rather than rolling over."""
+        sql = flat(
+            compiled(
+                manifest,
+                metric="trailing_12m_revenue",
+                dimensions=["customer__segment"],
+                time_grain="month",
+            ).sql
+        )
+        periods_cte = sql.split("), measured AS (")[0]
+        assert "segment" not in periods_cte
+        assert "customer.segment AS customer__segment" in sql
+        assert "GROUP BY periods.period, measured.customer__segment" in sql
+
+
+class TestCumulativeAgainstDuckDB:
+    """The generated SQL is executed, because a golden statement only proves what we wrote."""
+
+    def _seeded(self):
+        connection = duckdb.connect()
+        connection.execute(
+            "CREATE TABLE billing.fct_subscription_revenue_daily"
+            "(revenue_date DATE, amount INTEGER, subscription_id INTEGER, customer_id INTEGER)"
+            if False
+            else "CREATE SCHEMA billing; "
+            "CREATE TABLE billing.fct_subscription_revenue_daily "
+            "(revenue_date DATE, amount INTEGER, subscription_id INTEGER, customer_id INTEGER)"
+        )
+        rows = []
+        for month in range(1, 10):  # Jan–Sep 2026, £100 on the first of each month
+            rows.append((f"2026-{month:02d}-01", 100, 1, 1))
+        connection.executemany(
+            "INSERT INTO billing.fct_subscription_revenue_daily VALUES (?, ?, ?, ?)", rows
+        )
+        return connection
+
+    def test_a_trailing_total_accumulates_across_periods(self, manifest):
+        query = compiled(manifest, metric="trailing_12m_revenue", time_grain="month")
+        result = self._seeded().execute(query.sql, query.parameters).fetchall()
+        by_period = {row[0].strftime("%Y-%m"): row[1] for row in result}
+        # Q3 anchors see every month since January, so the total climbs by 100 each month.
+        assert by_period == {"2026-07": 700, "2026-08": 800, "2026-09": 900}
+
+    def test_an_inactive_period_drops_its_anchor(self, manifest):
+        """The known gap, executed: October has no rows, so its trailing total is absent rather
+        than rolling forward. Recorded in docs/failure-modes.md as anchor dropping."""
+        request = QueryRequest(
+            metric="trailing_12m_revenue",
+            date_range={"start_date": "2026-09-01", "end_date": "2026-10-31"},
+            time_grain="month",
+        )
+        query = compile_query(manifest, validate(manifest, request))
+        periods = [
+            row[0].strftime("%Y-%m")
+            for row in self._seeded().execute(query.sql, query.parameters).fetchall()
+        ]
+        assert periods == ["2026-09"]  # October is missing, not 900
+        assert query.expected_periods == [date(2026, 9, 1), date(2026, 10, 1)]
+
+    def test_row_multiplication_at_daily_grain_is_bounded_by_the_window(self, manifest):
+        """A range join replicates each row once per anchor it falls into. At daily grain with a
+        long window that is the cost of correctness, and it should be measured, not assumed."""
+        query = compiled(
+            manifest,
+            metric="trailing_12m_revenue",
+            time_grain="day",
+            date_range={"start_date": "2026-07-01", "end_date": "2026-07-31"},
+        )
+        connection = self._seeded()
+        joined = connection.execute(
+            "SELECT COUNT(*) FROM ("
+            + query.sql.replace("SUM(measured.value)", "measured.value").replace(
+                "GROUP BY periods.period", ""
+            )
+            + ")",
+            query.parameters,
+        ).fetchone()[0]
+        anchors = 31  # one per day in July
+        assert joined <= anchors * 7  # seven rows in the scan window, each seen once per anchor
