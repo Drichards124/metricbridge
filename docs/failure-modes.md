@@ -49,7 +49,9 @@ request is rejected, so the case cannot arise · **unguarded** — known, not ye
 | Metric filter placed in `WHERE` | Filtering before aggregation answers a different question | guarded | `tests/test_validate.py::TestResolution::test_filters_split_by_what_the_field_is` |
 | Enforced rule that the signature never advertised | The agent wastes turns discovering constraints | guarded | `tests/test_signature.py::test_every_rule_contributes_to_the_signature` |
 | Undocumented error code | Agents branch on a code no document describes | guarded | `tests/test_error_codes.py` |
-| A constraint that only fixtures exercise | Real manifests differ from the ones we wrote | unguarded | property tests from 1.3 (D10); public manifests in 1.2b (D12) |
+| A constraint that only fixtures exercise | Real manifests differ from the ones we wrote | guarded | `tests/test_properties.py` — invariants over generated manifests |
+| A requirement the signature implies but never states | An agent that read the signature is still refused (found by the property suite: a snapshot metric demanded a grain it never declared) | guarded | `tests/test_properties.py::test_a_metric_that_demands_a_grain_says_so` |
+| A question whose words appear nowhere in the manifest | Discovery returns nothing and the agent gives up or invents a metric | unguarded | deliberate: recorded by `tests/test_discovery.py::test_a_phrasing_sharing_no_word_with_the_catalog_finds_nothing`. The trigger for embeddings is measured recall failure |
 | A certified definition that cannot be written down | "Revenue" really means revenue excluding refunds; without metric filters the manifest states something else | guarded | `tests/test_manifest_valid.py::test_metric_level_filters_are_part_of_the_definition` |
 | A metric filter naming a cut the metric cannot reach | The definition would silently not apply | guarded | `tests/test_manifest_invalid.py` (`metric-filter-on-unknown-field`) |
 | Filtering a field the definition already pins | "Store revenue" from a web-only metric returns 0, reading as "stores sold nothing" | guarded | `tests/test_validate.py::TestDefinitionConstraints` |

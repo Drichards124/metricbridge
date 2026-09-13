@@ -9,8 +9,9 @@ from the signature. Enforcing something the agent cannot look up first is a brok
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ..discovery import rank_names
 from ..manifest import OPERATORS
-from .context import GRAIN_ORDER, Context, close_matches
+from .context import GRAIN_ORDER, Context
 from .errors import Refusal
 from .request import MAX_ROW_LIMIT
 
@@ -91,7 +92,9 @@ def _dimensions(context: Context) -> list[Refusal]:
             remediation=(
                 "Use a dimension from the metric signature, or pick a metric that carries it."
             ),
-            valid_alternatives=close_matches(name, context.dimension_names),
+            valid_alternatives=rank_names(
+                name, context.dimension_names, descriptions=context.descriptions
+            ),
         )
         for name in context.unknown_dimensions
     ]
@@ -232,7 +235,9 @@ def _filters(context: Context) -> list[Refusal]:
             field="filters",
             offending_value=name,
             remediation="Filter on a dimension or the metric itself, as named in the signature.",
-            valid_alternatives=close_matches(name, context.filter_fields),
+            valid_alternatives=rank_names(
+                name, context.filter_fields, descriptions=context.descriptions
+            ),
         )
         for name in context.unknown_filter_fields
     ]
@@ -294,7 +299,7 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "snapshot_rollup",
         ("non_additive_cut",),
-        ("additive", "non_additive_dimension", "time_grains"),
+        ("additive", "non_additive_dimension", "time_grains", "time_grain_required"),
         _snapshot_rollup,
     ),
     Rule("filters", ("unknown_filter_field", "unsupported_operator"), ("filters",), _filters),

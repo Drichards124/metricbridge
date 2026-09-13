@@ -1,7 +1,7 @@
 """The semantic manifest: the whitelist of governed metrics and the tables behind them."""
 
 from .catalog import CatalogEntry, dimension_catalog, metric_sources, resolve
-from .load import Join, ManifestError, ManifestIssue, SemanticManifest, load_manifest
+from .load import Join, ManifestError, ManifestIssue, SemanticManifest, assemble, load_manifest
 from .model import (
     OPERATORS,
     Dimension,
@@ -29,6 +29,7 @@ __all__ = [
     "NonAdditiveDimension",
     "SemanticManifest",
     "SemanticModel",
+    "assemble",
     "dimension_catalog",
     "load_manifest",
     "metric_sources",

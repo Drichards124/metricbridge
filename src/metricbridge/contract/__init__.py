@@ -1,7 +1,7 @@
 """The metric contract: what may be asked of a metric, and how a bad request is refused."""
 
 from ..manifest import OPERATORS
-from .api import signature, validate
+from .api import signature, unknown_metric, validate
 from .context import DateRange, Resolved, ResolvedDimension, ResolvedFilter
 from .errors import Refusal, RefusalError
 from .request import (
@@ -32,5 +32,6 @@ __all__ = [
     "ResolvedFilter",
     "Rule",
     "signature",
+    "unknown_metric",
     "validate",
 ]

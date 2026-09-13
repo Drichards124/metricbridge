@@ -153,6 +153,10 @@ class Context:
         return own + [name for _, name in joined]
 
     @property
+    def descriptions(self) -> dict[str, str]:
+        return {name: entry.description for name, entry in self.catalog.items()}
+
+    @property
     def filter_fields(self) -> list[str]:
         return [self.metric.name, *self.dimension_names]
 

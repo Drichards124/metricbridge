@@ -8,6 +8,13 @@ All notable changes to MetricBridge are documented here. The format follows
 
 ### Added
 
+- MCP server (`metricbridge --manifest PATH`, stdio) exposing `discover_metrics` and
+  `get_metric_signature`. Refusals come back as data (`ok: false` with structured errors), never as
+  protocol errors.
+- Lexical metric discovery (BM25) over names, descriptions, synonyms and authorised cuts, filtered
+  by domain and tier. Refusal suggestions use the same ranking, with fuzzy matching for typos.
+- Signatures state `time_grain_required`, so a metric that can only answer at its base grain says so.
+
 - Manifest format: YAML semantic models (entities, dimensions, measures) and `simple`, `ratio` and
   `cumulative` metrics, following dbt MetricFlow's vocabulary. See [GLOSSARY.md](GLOSSARY.md).
 - Requests are validated against a metric's contract before any SQL exists, and refused with a

@@ -215,6 +215,7 @@ class Metric(_Strict):
     description: str
     tier: Tier = "experimental"
     owner: str | None = None
+    domain: str | None = None
     replaced_by: str | None = Field(default=None, validate_default=True)
     synonyms: list[str] = Field(default_factory=list)
     filters: list[MetricFilter] = Field(default_factory=list)

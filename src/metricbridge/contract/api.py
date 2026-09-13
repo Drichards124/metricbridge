@@ -5,31 +5,31 @@ advertised. Everything here happens before SQL exists: a refusal names the metri
 ("region is not a cut of inventory_on_hand"), never the database's ("column not found").
 """
 
+from ..discovery import rank_names
 from ..manifest import OPERATORS, SemanticManifest
-from .context import Resolved, build_context, close_matches
+from .context import Resolved, build_context
 from .errors import Refusal, RefusalError
 from .request import DEFAULT_ROW_LIMIT, MAX_ROW_LIMIT, QueryRequest
 from .rules import RULES
+
+
+def unknown_metric(manifest: SemanticManifest, name: str) -> Refusal:
+    """The one refusal raised before any rule can run: the metric is not in the manifest."""
+    return Refusal(
+        code="unknown_metric",
+        message=f"no governed metric named {name!r}.",
+        field="metric",
+        offending_value=name,
+        remediation="Call discover_metrics to find the certified name for this concept.",
+        valid_alternatives=rank_names(name, sorted(manifest.metrics), limit=5),
+    )
 
 
 def validate(manifest: SemanticManifest, request: QueryRequest) -> Resolved:
     """Return the resolved request, or raise `RefusalError` carrying every problem found."""
     metric = manifest.metrics.get(request.metric)
     if metric is None:
-        raise RefusalError(
-            [
-                Refusal(
-                    code="unknown_metric",
-                    message=f"no governed metric named {request.metric!r}.",
-                    field="metric",
-                    offending_value=request.metric,
-                    remediation=(
-                        "Call discover_metrics to find the certified name for this concept."
-                    ),
-                    valid_alternatives=close_matches(request.metric, sorted(manifest.metrics)),
-                )
-            ]
-        )
+        raise RefusalError([unknown_metric(manifest, request.metric)])
 
     context = build_context(manifest, request, metric)
     refusals = [refusal for rule in RULES for refusal in rule.check(context)]
@@ -73,6 +73,7 @@ def signature(manifest: SemanticManifest, metric_name: str) -> dict:
         "additive": context.additive,
         "non_additive_dimension": context.snapshot.model_dump() if context.snapshot else None,
         "time_grains": context.supported_grains,
+        "time_grain_required": context.rolls_up_undeclared,
         "dimensions": [
             {
                 "name": dimension.name,

@@ -146,6 +146,16 @@ replacing near-name matching (D13). Property-based tests start here (D10): the f
 that `validate` accepts exactly what the signature advertises, over generated manifests.
 **Verify:** golden search results for ≥ 30 phrasings; an MCP client test lists exactly three tools and round-trips the two read tools.
 
+### 1.3b · Asking instead of guessing
+When discovery cannot answer confidently, the better move is a question, not a better guess (D15).
+Where the client supports MCP elicitation, `discover_metrics` asks the user which metric they mean,
+with the candidates as the schema; where it does not, the structured `no_match` reply delivered in
+1.3 carries the catalog and tells the agent to ask. Unmatched phrasings are recorded, because each
+one is either a missing synonym (a deterministic fix) or evidence toward the recall failure that
+would justify embeddings.
+**Verify:** a test client that answers an elicitation drives the flow end to end; a client without
+the capability still gets the `no_match` catalog reply.
+
 ### 1.4 · Compiler
 Dialect-aware compilation through sqlglot typed expressions: half-open date intervals
 `[start, end + 1 day)`, dialect-correct time bucketing, an aggregation time dimension that may
@@ -227,6 +237,7 @@ publishes only from a green candidate. Maintainer briefings regenerated from the
 - **D11 · Modelling gaps in Phase 1.** _Decided:_ 1.4 takes the two silent-wrong-number paths common in real warehouses — an aggregation time dimension that differs from the partition column, and `count_distinct` / `average` recomputed from base rows rather than rolled up. 1.7's corpus adds fan-trap and chasm-trap shapes. SCD type 2 (`natural` entities), timezones and multi-currency each need their own design and go to Phase 2.
 - **D12 · Reality check without a private project.** _Decided:_ no real dbt project is available to borrow, so milestone 1.2b takes a feature census of MetricFlow's public semantic-manifest fixtures (Apache-2.0) at a pinned commit and publishes `docs/conformance/manifest-coverage.md`. A census rather than a load: those fixtures use dbt's YAML shape, so loading them would measure format translation, not modelling coverage. The gaps it finds drive plan changes.
 - **D14 · Census findings (13 Sep 2026).** _Decided:_ `derived` metrics stay in Phase 2 despite being the most-used type in the corpus (63 uses) — they are arithmetic over metrics Phase 1 already computes correctly, the fixture corpus overstates their real frequency, and 1.4 is already the largest milestone. Metric-level filters (16 uses) come into Phase 1 as milestone 1.2c, because without them a manifest cannot state what a certified metric actually means. The census also found an interop bug of ours — declared values must be matched case-insensitively — now fixed.
+- **D15 · Clarify rather than infer (13 Sep 2026).** _Decided:_ when a question's words appear nowhere in the catalog, MetricBridge asks instead of guessing. Discovery returns a `no_match` refusal carrying the catalog, flags weak matches as not confident, and the tool description tells the agent to ask the user rather than rephrase. Milestone 1.3b adds MCP elicitation so the question reaches a person where the client supports it. Embeddings stay deferred: a similarity score cannot tell revenue from order count when someone says "sell", and each clarification instead becomes a synonym that fixes the question deterministically for everyone after.
 - **D13 · Suggestion ranking.** _Decided:_ refusal alternatives are ordered by the join graph now (own cuts first, then per entity) and capped at 25; 1.3 ranks them with the BM25 index built for discovery; embeddings stay deferred until telemetry shows refusals that are not repaired in one turn.
 - **D9 · Phase 1 subset.** _Decided:_ `derived` and `conversion` metrics, `percentile`, `median` and `sum_boolean` aggregations, sub-day granularities and `natural` entities are refused at load as "not supported in this version", never ignored.
 
@@ -238,5 +249,6 @@ publishes only from a green candidate. Maintainer briefings regenerated from the
 - 12 Sep 2026 — status briefings moved out of the repository; E9 and 1.10 updated.
 - 12 Sep 2026 — structure aligned with comparable projects (MCP Python SDK, MetricFlow, sqlglot, Iceberg-Python, Pydantic): 1.0 adds `AGENTS.md`, `Makefile`, pre-commit, zizmor, CodeQL; `GLOSSARY.md` → 1.1, `SECURITY-THREAT-MODEL.md` → 1.5, `local-data-warehouses/` → 1.7, `examples/` → 1.10, documentation site → Phase 2; issue forms and a code of conduct arrive with contribution stage 1.
 - 12 Sep 2026 — D7 (MetricFlow-shaped manifest), D8 (declared snapshot rollups), D9 (Phase 1 subset); 1.1, 1.2, 1.4 and scope updated.
+- 13 Sep 2026 — D15 added (clarify rather than infer); new milestone 1.3b (elicitation).
 - 13 Sep 2026 — D10–D13 added; new milestone 1.2b; E11 and E12 added; 1.3, 1.4 and 1.7 updated; `docs/failure-modes.md` created.
 - 13 Sep 2026 — 1.2b run: D14 added (derived deferred, metric-level filters into Phase 1 as new milestone 1.2c); case-insensitive value matching fixed.

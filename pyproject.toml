@@ -13,7 +13,10 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.2", "ruff>=0.6"]
+dev = ["pytest>=8.2", "ruff>=0.6", "hypothesis>=6.140"]
+
+[project.scripts]
+metricbridge = "metricbridge.server:main"
 
 [build-system]
 requires = ["hatchling"]
