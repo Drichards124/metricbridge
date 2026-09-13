@@ -8,6 +8,11 @@ All notable changes to MetricBridge are documented here. The format follows
 
 ### Added
 
+- Ratio metrics compile to two aggregates divided after grouping, joined on every group key. A zero
+  denominator yields null rather than zero.
+- Snapshot metrics with a declared roll-up compile to one row per group per period, chosen by the
+  declared window (`min` or `max`), then aggregated — month-end stock rather than a sum of days.
+
 - SQL compilation for simple metrics: one parameterised statement per request, rendered for DuckDB,
   Postgres, BigQuery, Snowflake and ClickHouse. Values are always bound, never interpolated.
 - Date ranges compile to half-open bounds (`>= start`, `< end + 1 day`), so the last day is not

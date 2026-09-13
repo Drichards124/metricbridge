@@ -13,11 +13,13 @@ request is rejected, so the case cannot arise · **unguarded** — known, not ye
 | Failure | What goes wrong | Status | Guard |
 | --- | --- | --- | --- |
 | Snapshot summed across time | Twelve monthly snapshots of stock count the same pallet twelve times | guarded | `tests/test_validate.py::TestRefusals::test_snapshot_without_a_declared_rollup_is_refused` |
-| Snapshot rolled up the wrong way | Month-end stock computed as an average, or from the first day | guarded | declaration is explicit (`window_choice`); `tests/test_validate.py::TestResolution::test_declared_snapshot_rollup_is_admitted` |
+| Snapshot rolled up the wrong way | Month-end stock computed as an average, or from the first day | guarded | the compiler ranks by the declared window and keeps one row per group (`tests/test_compiler.py::TestSnapshotMetrics`) |
 | Grain finer than the table | A weekly table asked for a daily figure invents rows | guarded | `tests/test_validate.py::test_a_grain_finer_than_the_table_is_refused` |
 | `count_distinct` rolled up | Distinct orders per day summed into a month double-counts repeat orders | guarded | `tests/test_compiler.py::TestAggregations::test_a_distinct_count_is_recomputed_at_the_requested_grain` |
 | `average` rolled up | An average of daily averages is not the period average | guarded | same: every aggregate is computed from base rows, never from a finer aggregate |
 | `percentile` / `median` | Not additive, and engines disagree on method | refused | not supported in this version (D9) |
+| Ratio computed as an average of ratios | The average of daily ratios is not the period ratio | guarded | `tests/test_compiler.py::TestRatioMetrics::test_a_ratio_divides_two_aggregates_after_grouping` |
+| Zero denominator reported as zero | "No orders" reads as "£0 average order value" | guarded | `tests/test_compiler.py::TestRatioMetrics::test_a_zero_denominator_yields_null_not_zero` |
 
 ## Joins
 

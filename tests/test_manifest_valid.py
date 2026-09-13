@@ -30,6 +30,7 @@ def test_loads_every_file_in_a_directory():
         "trailing_12m_revenue",
         "revenue_month_to_date",
         "shipments",
+        "opening_stock",
     }
 
 

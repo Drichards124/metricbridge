@@ -5,18 +5,30 @@ the statement. That inversion is the firewall — there is no prompt-injection p
 because query text is not agent-supplied. Values travel as bound parameters, so a filter value like
 `O'Brien'; DROP TABLE` reaches the database as a string and nothing else.
 
-Everything here is built from typed sqlglot expressions rather than assembled strings, which is why
-a time bucket comes out as `DATE_TRUNC(col, MONTH)` on BigQuery and `dateTrunc(...)` on ClickHouse
+Three shapes, one scan. A simple metric aggregates the scan; a ratio aggregates it twice and divides
+after grouping; a snapshot ranks it and keeps one row per group before aggregating. Sharing the scan
+is what stops their bounds, joins and filters from drifting apart.
+
+Everything is built from typed sqlglot expressions rather than assembled strings, which is why a
+time bucket comes out as `DATE_TRUNC(col, MONTH)` on BigQuery and `dateTrunc(...)` on ClickHouse
 instead of one spelling that is wrong on four engines.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from sqlglot import exp, parse_one
 
 from .contract import Resolved, ResolvedFilter
-from .manifest import Measure, SemanticManifest, SemanticModel, metric_sources
+from .manifest import (
+    Measure,
+    Metric,
+    SemanticManifest,
+    SemanticModel,
+    dimension_catalog,
+    metric_sources,
+    resolve,
+)
 
 DIALECTS = ("duckdb", "postgres", "bigquery", "snowflake", "clickhouse")
 
@@ -36,6 +48,17 @@ class CompiledQuery:
     parameters: dict[str, object]
     dialect: str
     columns: list[str]
+
+
+@dataclass
+class _Scan:
+    """The rows a metric reads: one table, its joins, its bounds and its filters."""
+
+    base: SemanticModel
+    alias: str
+    business: exp.Column
+    conditions: list[exp.Expression]
+    joins: dict[str, str] = field(default_factory=dict)  # entity -> semantic model reached
 
 
 def _qualify(expression: exp.Expression, table: str) -> exp.Expression:
@@ -84,9 +107,8 @@ def _predicate(
     return _COMPARISONS[operator](this=column, expression=_placeholder(name))
 
 
-def _dimension_column(resolved: Resolved, dimension) -> exp.Column:
-    table = dimension.entity or resolved.base_model.name
-    return exp.column(dimension.column, table=table)
+def _column_of(resolved: Resolved, dimension) -> exp.Column:
+    return exp.column(dimension.column, table=dimension.entity or resolved.base_model.name)
 
 
 def _join(base: SemanticModel, target: SemanticModel, entity: str) -> exp.Join:
@@ -100,82 +122,50 @@ def _join(base: SemanticModel, target: SemanticModel, entity: str) -> exp.Join:
     return exp.Join(this=exp.to_table(target.table).as_(entity), on=condition, side="LEFT")
 
 
-def compile_query(
-    manifest: SemanticManifest, resolved: Resolved, dialect: str = "duckdb"
-) -> CompiledQuery:
-    """Return one statement and its parameters. Pure: the same request compiles identically."""
-    if dialect not in DIALECTS:
-        raise ValueError(f"unsupported dialect {dialect!r}; expected one of {', '.join(DIALECTS)}")
+def _null_key_case(base: SemanticModel, entity: str, alias: str) -> exp.Expression:
+    foreign = next(e for e in base.entities if e.name == entity)
+    return exp.Case(
+        ifs=[
+            exp.If(
+                this=exp.Is(this=exp.column(foreign.expr, table=alias), expression=exp.Null()),
+                true=exp.Literal.number(1),
+            )
+        ],
+        default=exp.Literal.number(0),
+    )
 
+
+def _build_scan(
+    manifest: SemanticManifest,
+    resolved: Resolved,
+    measure: Measure,
+    parameters: dict[str, object],
+    *,
+    extra_filters: tuple[ResolvedFilter, ...] = (),
+) -> _Scan:
     base = resolved.base_model
     alias = base.name
-    measures, _ = metric_sources(manifest.semantic_models, manifest.metrics, resolved.metric)
-    measure = measures[0]
-    parameters: dict[str, object] = {}
-
-    business = next(
+    business_dimension = next(
         d
         for d in base.dimensions
         if d.name == (measure.agg_time_dimension or resolved.partition.name)
     )
-    business_column = exp.column(business.expr, table=alias)
+    business = exp.column(business_dimension.expr, table=alias)
 
-    projections: list[exp.Expression] = []
-    groups: list[exp.Expression] = []
-    columns: list[str] = []
-
-    if resolved.time_grain:
-        bucket = exp.DateTrunc(this=business_column, unit=exp.Literal.string(resolved.time_grain))
-        projections.append(exp.alias_(bucket, "period"))
-        groups.append(bucket)
-        columns.append("period")
-
-    for dimension in resolved.dimensions:
-        column = _dimension_column(resolved, dimension)
-        projections.append(exp.alias_(column, dimension.requested))
-        groups.append(column)
-        columns.append(dimension.requested)
-
-    projections.append(exp.alias_(_aggregate(measure, alias, dialect), resolved.metric.name))
-    columns.append(resolved.metric.name)
-
-    reached: dict[str, str] = {}  # entity -> the semantic model it reaches
-    for item in (*resolved.dimensions, *resolved.metric_filters, *resolved.where_filters):
-        dimension = item if hasattr(item, "entity") else item.dimension
-        if dimension is not None and dimension.entity:
-            reached[dimension.entity] = dimension.model
-    entities = sorted(reached)
-    for entity in entities:
-        foreign = next(e for e in base.entities if e.name == entity)
-        null_keys = exp.Sum(
-            this=exp.Case(
-                ifs=[
-                    exp.If(
-                        this=exp.Is(
-                            this=exp.column(foreign.expr, table=alias), expression=exp.Null()
-                        ),
-                        true=exp.Literal.number(1),
-                    )
-                ],
-                default=exp.Literal.number(0),
-            )
-        )
-        name = f"{entity}__null_key_rows"
-        projections.append(exp.alias_(null_keys, name))
-        columns.append(name)
-
-    parameters["start_date"] = resolved.date_range.start_date
-    parameters["end_date"] = resolved.date_range.end_date + timedelta(days=1)
-    conditions: list[exp.Expression] = [
-        exp.GTE(this=business_column, expression=_placeholder("start_date")),
-        exp.LT(this=business_column, expression=_placeholder("end_date")),
+    parameters.setdefault("start_date", resolved.date_range.start_date)
+    parameters.setdefault("end_date", resolved.date_range.end_date + timedelta(days=1))
+    conditions = [
+        exp.GTE(this=business, expression=_placeholder("start_date")),
+        exp.LT(this=business, expression=_placeholder("end_date")),
     ]
 
     partition = resolved.partition
     if measure.agg_time_dimension and measure.agg_time_dimension != partition.name:
         lag = timedelta(days=measure.partition_lag_days or 0)
-        parameters["partition_start"] = resolved.date_range.start_date - lag
-        parameters["partition_end"] = resolved.date_range.end_date + timedelta(days=1) + lag
+        parameters.setdefault("partition_start", resolved.date_range.start_date - lag)
+        parameters.setdefault(
+            "partition_end", resolved.date_range.end_date + timedelta(days=1) + lag
+        )
         partition_column = exp.column(partition.expr, table=alias)
         conditions += [
             exp.GTE(this=partition_column, expression=_placeholder("partition_start")),
@@ -183,35 +173,248 @@ def compile_query(
         ]
 
     for index, filter_ in enumerate(resolved.metric_filters):
-        column = _dimension_column(resolved, filter_.dimension)
+        column = _column_of(resolved, filter_.dimension)
         conditions.append(_predicate(column, filter_, f"metric_filter_{index}", parameters))
+    for index, filter_ in enumerate(extra_filters):
+        column = _column_of(resolved, filter_.dimension)
+        conditions.append(_predicate(column, filter_, f"leg_filter_{index}", parameters))
     for index, filter_ in enumerate(resolved.where_filters):
-        column = _dimension_column(resolved, filter_.dimension)
+        column = _column_of(resolved, filter_.dimension)
         conditions.append(_predicate(column, filter_, f"filter_{index}", parameters))
 
-    query = exp.select(*projections).from_(exp.to_table(base.table).as_(alias))
-    for entity in entities:
-        query = query.join(_join(base, manifest.semantic_models[reached[entity]], entity))
+    joins: dict[str, str] = {}
+    everything = (
+        *resolved.dimensions,
+        *resolved.metric_filters,
+        *extra_filters,
+        *resolved.where_filters,
+    )
+    for item in everything:
+        dimension = item if hasattr(item, "entity") else item.dimension
+        if dimension is not None and dimension.entity:
+            joins[dimension.entity] = dimension.model
+    return _Scan(base=base, alias=alias, business=business, conditions=conditions, joins=joins)
 
-    condition = conditions[0]
-    for extra in conditions[1:]:
+
+def _apply(query: exp.Select, manifest: SemanticManifest, scan: _Scan) -> exp.Select:
+    query = query.from_(exp.to_table(scan.base.table).as_(scan.alias))
+    for entity in sorted(scan.joins):
+        query = query.join(_join(scan.base, manifest.semantic_models[scan.joins[entity]], entity))
+    condition = scan.conditions[0]
+    for extra in scan.conditions[1:]:
         condition = exp.and_(condition, extra)
-    query = query.where(condition)
+    return query.where(condition)
 
+
+def _bucket(resolved: Resolved, business: exp.Column) -> exp.Expression | None:
+    if not resolved.time_grain:
+        return None
+    return exp.DateTrunc(this=business, unit=exp.Literal.string(resolved.time_grain))
+
+
+def _leg_filters(
+    manifest: SemanticManifest, resolved: Resolved, metric: Metric
+) -> tuple[ResolvedFilter, ...]:
+    """A ratio leg carries its own definition: `web_revenue / order_count` filters only the top."""
+    catalog = dimension_catalog(manifest.semantic_models, manifest.joins, resolved.base_model)
+    filters = []
+    for declared in metric.filters:
+        entry = resolve(catalog, declared.field)
+        if entry is not None and not isinstance(entry, list):
+            filters.append(ResolvedFilter(declared.field, declared.operator, declared.value, entry))
+    return tuple(filters)
+
+
+def _compile_simple(
+    manifest: SemanticManifest,
+    resolved: Resolved,
+    measure: Measure,
+    dialect: str,
+    parameters: dict[str, object],
+) -> tuple[exp.Select, list[str]]:
+    scan = _build_scan(manifest, resolved, measure, parameters)
+    projections: list[exp.Expression] = []
+    groups: list[exp.Expression] = []
+    columns: list[str] = []
+
+    bucket = _bucket(resolved, scan.business)
+    if bucket is not None:
+        projections.append(exp.alias_(bucket, "period"))
+        groups.append(bucket)
+        columns.append("period")
+    for dimension in resolved.dimensions:
+        column = _column_of(resolved, dimension)
+        projections.append(exp.alias_(column, dimension.requested))
+        groups.append(column)
+        columns.append(dimension.requested)
+
+    projections.append(exp.alias_(_aggregate(measure, scan.alias, dialect), resolved.metric.name))
+    columns.append(resolved.metric.name)
+    for entity in sorted(scan.joins):
+        name = f"{entity}__null_key_rows"
+        counted = exp.Sum(this=_null_key_case(scan.base, entity, scan.alias))
+        projections.append(exp.alias_(counted, name))
+        columns.append(name)
+
+    query = _apply(exp.select(*projections), manifest, scan)
     if groups:
         query = query.group_by(*groups)
-
     for index, clause in enumerate(resolved.having_filters, start=len(resolved.where_filters)):
-        aggregate = _aggregate(measure, alias, dialect)
+        aggregate = _aggregate(measure, scan.alias, dialect)
         query = query.having(_predicate(aggregate, clause, f"filter_{index}", parameters))
+    return query, columns
 
-    for field, direction in resolved.order_by:
-        query = query.order_by(exp.Ordered(this=exp.column(field), desc=direction == "desc"))
 
+def _compile_snapshot(
+    manifest: SemanticManifest,
+    resolved: Resolved,
+    measure: Measure,
+    dialect: str,
+    parameters: dict[str, object],
+) -> tuple[exp.Select, list[str]]:
+    """One row per group per period, chosen by the declared window, then aggregated.
+
+    Summing a snapshot across time counts the same stock once per period. The declaration says which
+    snapshot stands for the period, so the roll-up is the author's rather than a guess.
+    """
+    declared = measure.non_additive_dimension
+    scan = _build_scan(manifest, resolved, measure, parameters)
+    snapshot_dimension = next(d for d in scan.base.dimensions if d.name == declared.name)
+    snapshot_column = exp.column(snapshot_dimension.expr, table=scan.alias)
+
+    inner: list[exp.Expression] = []
+    keys: list[str] = []
+    partition_by: list[exp.Expression] = []
+
+    bucket = _bucket(resolved, scan.business)
+    if bucket is not None:
+        inner.append(exp.alias_(bucket, "period"))
+        partition_by.append(bucket)
+        keys.append("period")
+    for dimension in resolved.dimensions:
+        inner.append(exp.alias_(_column_of(resolved, dimension), dimension.requested))
+        keys.append(dimension.requested)
+    for grouping in declared.window_groupings:
+        entity = next(e for e in scan.base.entities if e.name == grouping)
+        partition_by.append(exp.column(entity.expr, table=scan.alias))
+
+    inner.append(
+        exp.alias_(_qualify(parse_one(measure.expr, dialect=dialect), scan.alias), "value")
+    )
+    for entity in sorted(scan.joins):
+        inner.append(
+            exp.alias_(_null_key_case(scan.base, entity, scan.alias), f"{entity}__null_key")
+        )
+    window = exp.Window(
+        this=exp.RowNumber(),
+        partition_by=partition_by,
+        order=exp.Order(
+            expressions=[exp.Ordered(this=snapshot_column, desc=declared.window_choice == "max")]
+        ),
+    )
+    inner.append(exp.alias_(window, "position"))
+    ranked = _apply(exp.select(*inner), manifest, scan)
+
+    outer: list[exp.Expression] = [exp.column(key) for key in keys]
+    outer.append(
+        exp.alias_(_AGGREGATES[measure.agg](this=exp.column("value")), resolved.metric.name)
+    )
+    columns = [*keys, resolved.metric.name]
+    for entity in sorted(scan.joins):
+        name = f"{entity}__null_key_rows"
+        outer.append(exp.alias_(exp.Sum(this=exp.column(f"{entity}__null_key")), name))
+        columns.append(name)
+
+    query = (
+        exp.select(*outer)
+        .from_("ranked")
+        .where(exp.EQ(this=exp.column("position"), expression=exp.Literal.number(1)))
+    )
+    if keys:
+        query = query.group_by(*[exp.column(key) for key in keys])
+    return query.with_("ranked", as_=ranked), columns
+
+
+def _compile_ratio(
+    manifest: SemanticManifest, resolved: Resolved, dialect: str, parameters: dict[str, object]
+) -> tuple[exp.Select, list[str]]:
+    """Divide aggregates after grouping. Summing ratios answers a different question."""
+    keys: list[str] = ["period"] if resolved.time_grain else []
+    keys += [d.requested for d in resolved.dimensions]
+
+    legs: dict[str, exp.Select] = {}
+    sides = (("numerator", resolved.metric.numerator), ("denominator", resolved.metric.denominator))
+    for side, name in sides:
+        leg_metric = manifest.metrics[name]
+        measure = metric_sources(manifest.semantic_models, manifest.metrics, leg_metric)[0][0]
+        scan = _build_scan(
+            manifest,
+            resolved,
+            measure,
+            parameters,
+            extra_filters=_leg_filters(manifest, resolved, leg_metric),
+        )
+        projections: list[exp.Expression] = []
+        groups: list[exp.Expression] = []
+        bucket = _bucket(resolved, scan.business)
+        if bucket is not None:
+            projections.append(exp.alias_(bucket, "period"))
+            groups.append(bucket)
+        for dimension in resolved.dimensions:
+            column = _column_of(resolved, dimension)
+            projections.append(exp.alias_(column, dimension.requested))
+            groups.append(column)
+        projections.append(exp.alias_(_aggregate(measure, scan.alias, dialect), "value"))
+        leg = _apply(exp.select(*projections), manifest, scan)
+        legs[side] = leg.group_by(*groups) if groups else leg
+
+    ratio = exp.Div(
+        this=exp.func("COALESCE", exp.column("value", table="numerator"), exp.Literal.number(0)),
+        expression=exp.func(
+            "NULLIF", exp.column("value", table="denominator"), exp.Literal.number(0)
+        ),
+    )
+    outer = [exp.alias_(exp.column(key, table="denominator"), key) for key in keys]
+    outer.append(exp.alias_(ratio, resolved.metric.name))
+
+    query = exp.select(*outer).from_("denominator")
+    if keys:
+        condition = None
+        for key in keys:
+            equality = exp.EQ(
+                this=exp.column(key, table="denominator"),
+                expression=exp.column(key, table="numerator"),
+            )
+            condition = equality if condition is None else exp.and_(condition, equality)
+        query = query.join(exp.Join(this=exp.to_table("numerator"), on=condition, side="LEFT"))
+    else:
+        query = query.join(exp.Join(this=exp.to_table("numerator"), kind="CROSS"))
+
+    query = query.with_("numerator", as_=legs["numerator"])
+    query = query.with_("denominator", as_=legs["denominator"])
+    return query, [*keys, resolved.metric.name]
+
+
+def compile_query(
+    manifest: SemanticManifest, resolved: Resolved, dialect: str = "duckdb"
+) -> CompiledQuery:
+    """Return one statement and its parameters. Pure: the same request compiles identically."""
+    if dialect not in DIALECTS:
+        raise ValueError(f"unsupported dialect {dialect!r}; expected one of {', '.join(DIALECTS)}")
+
+    parameters: dict[str, object] = {}
+    if resolved.metric.type == "ratio":
+        query, columns = _compile_ratio(manifest, resolved, dialect, parameters)
+    else:
+        measure = metric_sources(manifest.semantic_models, manifest.metrics, resolved.metric)[0][0]
+        if measure.non_additive_dimension is not None:
+            query, columns = _compile_snapshot(manifest, resolved, measure, dialect, parameters)
+        else:
+            query, columns = _compile_simple(manifest, resolved, measure, dialect, parameters)
+
+    for name, direction in resolved.order_by:
+        query = query.order_by(exp.Ordered(this=exp.column(name), desc=direction == "desc"))
     query = query.limit(resolved.row_limit)
     return CompiledQuery(
-        sql=query.sql(dialect=dialect),
-        parameters=parameters,
-        dialect=dialect,
-        columns=columns,
+        sql=query.sql(dialect=dialect), parameters=parameters, dialect=dialect, columns=columns
     )

@@ -162,3 +162,102 @@ def test_the_result_columns_are_declared(manifest):
 
 def test_the_row_limit_is_injected_by_the_compiler(manifest):
     assert flat(compiled(manifest, row_limit=25).sql).endswith("LIMIT 25")
+
+
+class TestRatioMetrics:
+    def test_a_ratio_divides_two_aggregates_after_grouping(self, manifest):
+        """Dividing sums, never summing ratios: the average of averages is a different number."""
+        query = compiled(manifest, metric="average_order_value")
+        assert flat(query.sql) == (
+            "WITH numerator AS ("
+            "SELECT SUM(orders.amount) AS value FROM storefront.fct_order_lines AS orders "
+            "WHERE orders.order_date >= $start_date AND orders.order_date < $end_date"
+            "), denominator AS ("
+            "SELECT COUNT(DISTINCT orders.order_id) AS value "
+            "FROM storefront.fct_order_lines AS orders "
+            "WHERE orders.order_date >= $start_date AND orders.order_date < $end_date"
+            ") "
+            "SELECT COALESCE(numerator.value, 0) / NULLIF(denominator.value, 0) "
+            "AS average_order_value "
+            "FROM denominator CROSS JOIN numerator "
+            "LIMIT 100"
+        )
+
+    def test_a_ratio_joins_its_legs_on_every_group_key(self, manifest):
+        sql = flat(
+            compiled(
+                manifest, metric="average_order_value", dimensions=["channel"], time_grain="month"
+            ).sql
+        )
+        assert "GROUP BY DATE_TRUNC('MONTH', orders.order_date), orders.channel" in sql
+        assert (
+            "FROM denominator LEFT JOIN numerator "
+            "ON denominator.period = numerator.period AND denominator.channel = numerator.channel"
+        ) in sql
+        assert "SELECT denominator.period AS period, denominator.channel AS channel" in sql
+
+    def test_a_zero_denominator_yields_null_not_zero(self, manifest):
+        """No orders is not an average order value of nothing."""
+        assert (
+            "NULLIF(denominator.value, 0)" in compiled(manifest, metric="average_order_value").sql
+        )
+
+    def test_the_result_columns_cover_both_legs(self, manifest):
+        query = compiled(manifest, metric="average_order_value", time_grain="month")
+        assert query.columns == ["period", "average_order_value"]
+
+
+class TestSnapshotMetrics:
+    def test_a_declared_rollup_takes_the_periods_last_snapshot(self, manifest):
+        """Summing daily stock counts the same pallet once per day; month-end is one row per
+        product, chosen by the declared window."""
+        query = compiled(manifest, metric="inventory_on_hand", time_grain="month")
+        assert flat(query.sql) == (
+            "WITH ranked AS ("
+            "SELECT DATE_TRUNC('MONTH', inventory_snapshots.snapshot_date) AS period, "
+            "inventory_snapshots.units AS value, "
+            "ROW_NUMBER() OVER ("
+            "PARTITION BY DATE_TRUNC('MONTH', inventory_snapshots.snapshot_date), "
+            "inventory_snapshots.product_id "
+            "ORDER BY inventory_snapshots.snapshot_date DESC) AS position "
+            "FROM warehouse.fct_inventory_daily AS inventory_snapshots "
+            "WHERE inventory_snapshots.snapshot_date >= $start_date "
+            "AND inventory_snapshots.snapshot_date < $end_date"
+            ") "
+            "SELECT period, SUM(value) AS inventory_on_hand "
+            "FROM ranked WHERE position = 1 GROUP BY period "
+            "LIMIT 100"
+        )
+
+    def test_the_window_choice_decides_which_snapshot_wins(self, manifest):
+        opening = flat(compiled(manifest, metric="opening_stock", time_grain="month").sql)
+        assert "ORDER BY inventory_snapshots.snapshot_date ASC) AS position" in opening
+        closing = flat(compiled(manifest, metric="inventory_on_hand", time_grain="month").sql)
+        assert "ORDER BY inventory_snapshots.snapshot_date DESC) AS position" in closing
+
+    def test_without_a_grain_the_latest_snapshot_in_the_range_is_taken(self, manifest):
+        sql = flat(compiled(manifest, metric="inventory_on_hand").sql)
+        assert "PARTITION BY inventory_snapshots.product_id" in sql
+        assert "DATE_TRUNC" not in sql
+
+    def test_a_requested_cut_is_carried_through_the_ranking(self, manifest):
+        sql = flat(
+            compiled(
+                manifest, metric="inventory_on_hand", dimensions=["warehouse"], time_grain="month"
+            ).sql
+        )
+        assert "inventory_snapshots.warehouse AS warehouse" in sql
+        assert "GROUP BY period, warehouse" in sql
+
+
+def test_every_metric_shape_compiles_to_one_parseable_statement(manifest):
+    for name, metric in manifest.metrics.items():
+        if metric.type == "cumulative":
+            continue  # 1.4c
+        for dialect in ("duckdb", "postgres", "bigquery", "snowflake"):
+            request = QueryRequest(metric=name, date_range=Q3, time_grain="month")
+            if name in ("stock_level",):
+                request = QueryRequest(metric=name, date_range=Q3, time_grain="day")
+            query = compile_query(manifest, validate(manifest, request), dialect=dialect)
+            assert parse_one(query.sql, dialect=dialect).key == "select", f"{name}/{dialect}"
+            assert ";" not in query.sql

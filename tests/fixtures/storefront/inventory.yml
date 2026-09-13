@@ -20,11 +20,28 @@ semantic_models:
       # Deliberately undeclared: nothing says how it rolls up, so summing it across time is refused.
       - {name: units_on_hand_raw, agg: sum, expr: units, additive: false}
 
+      - name: units_at_open
+        agg: sum
+        expr: units
+        additive: false
+        non_additive_dimension:
+          name: snapshot_date
+          window_choice: min
+          window_groupings: [product]
+
 metrics:
   - name: inventory_on_hand
     type: simple
     measure: units_on_hand
     description: Units in stock at the end of the period.
+    tier: certified
+    owner: operations
+    domain: operations
+
+  - name: opening_stock
+    type: simple
+    measure: units_at_open
+    description: Units in stock at the start of the period.
     tier: certified
     owner: operations
     domain: operations
