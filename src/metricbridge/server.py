@@ -11,10 +11,12 @@ on an exception.
 
 import argparse
 import os
+from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
+from pydantic import Field, create_model
 
 from .contract import signature as metric_signature
 from .contract import unknown_metric
@@ -59,8 +61,50 @@ CATALOG_LIMIT = 20
 CONFIDENT_SCORE = 1.0
 
 
-def build_server(manifest: SemanticManifest) -> MCPServer:
+async def ask_which_metric(ctx: Context, query: str, options: list[str]) -> str | None:
+    """Put the question to the person, where the client can carry one.
+
+    A similarity score cannot tell revenue from order count when someone says "sell". A human can,
+    in one turn — and their answer is also the evidence that a synonym is missing from the manifest.
+    Clients without the capability fall through to the catalog reply, so nothing breaks.
+    """
+    if not options:
+        return None
+    try:
+        capabilities = ctx.client_capabilities
+    except (LookupError, AttributeError):  # called outside a request, as in unit tests
+        return None
+    if capabilities is None or getattr(capabilities, "elicitation", None) is None:
+        return None
+
+    schema = create_model(
+        "MetricChoice",
+        metric=(
+            Literal[tuple(options)],
+            Field(description="the governed metric that answers the question"),
+        ),
+    )
+    answer = await ctx.elicit(
+        message=(
+            f"No certified metric clearly matches {query!r}. Which of these did you mean? "
+            "Cancel if none of them do."
+        ),
+        schema=schema,
+    )
+    if answer.action == "accept" and answer.data is not None:
+        return answer.data.metric
+    return None
+
+
+def build_server(manifest: SemanticManifest, misses: Counter | None = None) -> MCPServer:
+    """`misses` counts phrasings the catalog could not answer confidently.
+
+    Each one is either a synonym missing from the manifest — a deterministic fix that helps every
+    later question — or, in volume, the measured recall failure that would justify reaching for
+    embeddings. Guessing produces neither.
+    """
     index = MetricIndex(manifest)
+    misses = misses if misses is not None else Counter()
     server = MCPServer(name="metricbridge", instructions=INSTRUCTIONS)
 
     def catalog(certified_only: bool) -> list[dict[str, Any]]:
@@ -77,13 +121,24 @@ def build_server(manifest: SemanticManifest) -> MCPServer:
         ][:CATALOG_LIMIT]
 
     @server.tool(name="discover_metrics", description=DISCOVER_DESCRIPTION, structured_output=True)
-    def discover_metrics(
+    async def discover_metrics(
         query: str,
+        ctx: Context,
         domain: str | None = None,
         certified_only: bool = True,
         limit: int = 5,
     ) -> dict[str, Any]:
         found = index.search(query, domain=domain, certified_only=certified_only, limit=limit)
+        confident = bool(found) and found[0][1] >= CONFIDENT_SCORE
+        chosen = None
+        if not confident:
+            misses[query] += 1
+            chosen = await ask_which_metric(
+                ctx, query, [entry["metric"] for entry in catalog(certified_only)]
+            )
+            if chosen is not None:
+                found = [(manifest.metrics[chosen], CONFIDENT_SCORE)]
+                confident = True
         if not found:
             return {
                 "ok": False,
@@ -104,10 +159,10 @@ def build_server(manifest: SemanticManifest) -> MCPServer:
                 "catalog": catalog(certified_only),
                 "domains": index.domains(),
             }
-        confident = found[0][1] >= CONFIDENT_SCORE
         return {
             "ok": True,
             "confident": confident,
+            "chosen_by_user": chosen,
             "clarify": None
             if confident
             else {
