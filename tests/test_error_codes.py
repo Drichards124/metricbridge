@@ -4,10 +4,11 @@ import re
 from pathlib import Path
 
 from metricbridge.contract.rules import CODES
+from metricbridge.engine import EXECUTION_CODES
 from metricbridge.guardrail import CODE as GUARDRAIL_CODE
 from metricbridge.server import DISCOVERY_CODES
 
-ALL_CODES = CODES | DISCOVERY_CODES | {GUARDRAIL_CODE}
+ALL_CODES = CODES | DISCOVERY_CODES | EXECUTION_CODES | {GUARDRAIL_CODE}
 
 DOC = Path(__file__).parents[1] / "docs" / "error-codes.md"
 
