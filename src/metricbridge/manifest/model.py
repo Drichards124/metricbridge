@@ -141,6 +141,12 @@ class Measure(_Expressed):
     expr: str
     description: str = ""
     additive: bool = True
+    # The business date the measure is aggregated by, when that is not the partition column: a
+    # table partitioned on ingestion date is still measured by when the order happened.
+    agg_time_dimension: str | None = None
+    # How far the partition column may lag the business date. Required when the two differ, so the
+    # scan can be bounded without dropping late-arriving rows.
+    partition_lag_days: int | None = Field(default=None, ge=0)
     non_additive_dimension: NonAdditiveDimension | None = Field(default=None, validate_default=True)
 
     @field_validator("non_additive_dimension")

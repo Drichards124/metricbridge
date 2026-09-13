@@ -196,6 +196,7 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                     )
                 )
 
+            partition = model.partition
             time_dimensions = {d.name for d in model.dimensions if d.type == "time"}
             entity_names = {e.name for e in model.entities}
             for j, measure in enumerate(model.measures):
@@ -210,6 +211,40 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                         )
                     )
                 measure_seen.setdefault(measure.name, f"semantic model {model.name!r}, {file}")
+                if measure.agg_time_dimension is not None:
+                    if measure.agg_time_dimension not in time_dimensions:
+                        issues.append(
+                            ManifestIssue(
+                                file,
+                                f"{where}.agg_time_dimension",
+                                f"{measure.agg_time_dimension!r} must be a time dimension of "
+                                f"semantic model {model.name!r}",
+                            )
+                        )
+                    elif (
+                        partition is not None
+                        and measure.agg_time_dimension != partition.name
+                        and measure.partition_lag_days is None
+                    ):
+                        issues.append(
+                            ManifestIssue(
+                                file,
+                                f"{where}.partition_lag_days",
+                                f"measure {measure.name!r} is aggregated by "
+                                f"{measure.agg_time_dimension!r} but partitioned on "
+                                f"{partition.name!r}: declare partition_lag_days so the "
+                                f"scan can be bounded without dropping late rows",
+                            )
+                        )
+                if measure.partition_lag_days is not None and measure.agg_time_dimension is None:
+                    issues.append(
+                        ManifestIssue(
+                            file,
+                            f"{where}.partition_lag_days",
+                            "partition_lag_days only means something with agg_time_dimension: "
+                            "without it the partition column is the business date",
+                        )
+                    )
                 snapshot = measure.non_additive_dimension
                 if snapshot is None:
                     continue

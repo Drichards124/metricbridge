@@ -64,6 +64,7 @@ class Resolved:
     having_filters: list[ResolvedFilter]
     date_range: DateRange
     time_grain: str | None
+    order_by: list[tuple[str, str]]  # (field, direction), already checked against the result set
     row_limit: int
     snapshot: NonAdditiveDimension | None
     metric_filters: list[ResolvedFilter]  # declared on the metric, applied to every query

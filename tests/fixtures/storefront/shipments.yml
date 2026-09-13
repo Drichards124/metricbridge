@@ -1,0 +1,26 @@
+semantic_models:
+  - name: shipments
+    table: logistics.fct_shipments
+    description: One row per shipment. Partitioned on load date; measured by when it shipped.
+    entities:
+      - {name: shipment, type: primary, expr: shipment_id}
+      - {name: customer, type: foreign, expr: customer_id}
+    dimensions:
+      - {name: loaded_at, type: time, time_granularity: day, is_partition: true}
+      - {name: shipped_date, type: time, time_granularity: day}
+      - {name: carrier, type: categorical}
+    measures:
+      - name: shipment_count
+        agg: count
+        expr: shipment_id
+        agg_time_dimension: shipped_date
+        partition_lag_days: 3
+
+metrics:
+  - name: shipments
+    type: simple
+    measure: shipment_count
+    description: Shipments dispatched, counted by the day they shipped.
+    tier: certified
+    owner: logistics
+    domain: operations

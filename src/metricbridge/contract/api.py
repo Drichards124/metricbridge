@@ -46,6 +46,7 @@ def validate(manifest: SemanticManifest, request: QueryRequest) -> Resolved:
         having_filters=context.having_filters,
         date_range=context.date_range,
         time_grain=request.time_grain,
+        order_by=[(clause.field, clause.direction) for clause in request.order_by],
         row_limit=request.row_limit,
         snapshot=context.snapshot,
         metric_filters=context.metric_filters,
