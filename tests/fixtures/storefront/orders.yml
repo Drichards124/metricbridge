@@ -31,6 +31,7 @@ metrics:
     description: Recognised order revenue, net of refunds.
     tier: certified
     owner: finance
+    domain: sales
     synonyms: [sales, gmv]
     max_window_days: 400
 
@@ -40,6 +41,7 @@ metrics:
     description: Distinct orders placed.
     tier: certified
     owner: finance
+    domain: sales
 
   - name: average_order_value
     type: ratio
@@ -48,6 +50,7 @@ metrics:
     description: Revenue per distinct order.
     tier: certified
     owner: finance
+    domain: sales
     synonyms: [aov]
 
   - name: gross_revenue
@@ -56,6 +59,7 @@ metrics:
     description: Order revenue before refunds. Superseded by revenue.
     tier: deprecated
     owner: finance
+    domain: sales
     replaced_by: revenue
 
   - name: web_revenue
@@ -64,6 +68,7 @@ metrics:
     description: Recognised revenue from the web channel only.
     tier: certified
     owner: finance
+    domain: sales
     filters:
       - {field: channel, operator: "=", value: web}
 
@@ -73,5 +78,6 @@ metrics:
     description: Recognised revenue from enterprise and strategic customers.
     tier: experimental
     owner: finance
+    domain: sales
     filters:
       - {field: customer__segment, operator: IN, value: [enterprise, strategic]}

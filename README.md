@@ -25,6 +25,16 @@ query_metric(stock_level, time_grain="month")   # a snapshot measure with no dec
   remediation: declare how it rolls up (for example, the last snapshot in each period), or query by day.
 ```
 
+## Running it
+
+```bash
+uv run metricbridge --manifest path/to/manifest/   # or set METRICBRIDGE_MANIFEST
+```
+
+It speaks MCP over stdio, so point any MCP client at that command. Two tools are live today —
+`discover_metrics` and `get_metric_signature` — and `query_metric` arrives with the compiler and an
+engine (milestones 1.4–1.6). There is no tool that accepts SQL, by design.
+
 ## Correctness is the product
 
 Every supported engine must return the same answer as an independent reference implementation.

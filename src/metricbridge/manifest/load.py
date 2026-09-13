@@ -98,12 +98,7 @@ def load_manifest(path: str | Path) -> SemanticManifest:
     if issues:
         raise ManifestError(issues)
 
-    return SemanticManifest(
-        semantic_models=models,
-        metrics=metrics,
-        joins=joins,
-        version=_version(models.values(), metrics.values()),
-    )
+    return assemble(models, metrics)
 
 
 def _read(file: Path) -> tuple[object, str | None]:
@@ -303,6 +298,17 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                         )
                     )
     return issues
+
+
+def assemble(models: dict[str, SemanticModel], metrics: dict[str, Metric]) -> SemanticManifest:
+    """Derive the joins and the version, and hand back a manifest. Structural validation has
+    already happened; this is the one place a `SemanticManifest` is constructed."""
+    return SemanticManifest(
+        semantic_models=models,
+        metrics=metrics,
+        joins=_joins(models.values()),
+        version=_version(models.values(), metrics.values()),
+    )
 
 
 def _metric_filter_issues(parsed, models, metrics, joins) -> list[ManifestIssue]:

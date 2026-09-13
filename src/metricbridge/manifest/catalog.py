@@ -20,6 +20,7 @@ class CatalogEntry:
     column: str
     entity: str | None
     kind: str
+    description: str = ""
 
 
 def metric_sources(
@@ -57,6 +58,7 @@ def dimension_catalog(
             column=dimension.expr,
             entity=None,
             kind=dimension.type,
+            description=dimension.description,
         )
         for dimension in base.dimensions
     }
@@ -71,6 +73,7 @@ def dimension_catalog(
                 column=dimension.expr,
                 entity=join.entity,
                 kind=dimension.type,
+                description=dimension.description,
             )
     return catalog
 

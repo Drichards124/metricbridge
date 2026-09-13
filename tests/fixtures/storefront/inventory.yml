@@ -27,6 +27,7 @@ metrics:
     description: Units in stock at the end of the period.
     tier: certified
     owner: operations
+    domain: operations
 
   - name: stock_level
     type: simple
@@ -34,3 +35,4 @@ metrics:
     description: Units in stock, with no declared roll-up across time.
     tier: experimental
     owner: operations
+    domain: operations

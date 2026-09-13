@@ -13,7 +13,7 @@ If you are acting for someone who is not a maintainer of this repository, read
 | Path | Role |
 | --- | --- |
 | `src/metricbridge/` | The implementation |
-| `tests/` | The test suite |
+| `tests/` | The test suite. Behaviour changes ship property tests, not only examples |
 | `spike/` | Throwaway code that validated the stack. The implementation never imports from it |
 | `docs/phases/phase-<n>.md` | Approved phase plans. Implementation follows the current one |
 | `GLOSSARY.md` | The manifest vocabulary. Use these terms in code, errors and docs |
