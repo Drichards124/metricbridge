@@ -1,0 +1,29 @@
+semantic_models:
+  - name: subscription_revenue
+    table: billing.fct_subscription_revenue_daily
+    description: Recognised subscription revenue per subscription per day.
+    entities:
+      - {name: subscription, type: foreign, expr: subscription_id}
+      - {name: customer, type: foreign, expr: customer_id}
+    dimensions:
+      - {name: revenue_date, type: time, time_granularity: day, is_partition: true}
+    measures:
+      - {name: recognised_revenue, agg: sum, expr: amount}
+
+metrics:
+  - name: trailing_12m_revenue
+    type: cumulative
+    measure: recognised_revenue
+    window: 12 months
+    description: Recognised subscription revenue over the trailing twelve months.
+    tier: certified
+    owner: finance
+    synonyms: [arr, ttm revenue]
+
+  - name: revenue_month_to_date
+    type: cumulative
+    measure: recognised_revenue
+    grain_to_date: month
+    description: Recognised subscription revenue since the start of the month.
+    tier: experimental
+    owner: finance

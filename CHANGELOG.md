@@ -6,4 +6,10 @@ All notable changes to MetricBridge are documented here. The format follows
 
 ## [Unreleased]
 
-Nothing released yet.
+### Added
+
+- Manifest format: YAML semantic models (entities, dimensions, measures) and `simple`, `ratio` and
+  `cumulative` metrics, following dbt MetricFlow's vocabulary. See [GLOSSARY.md](GLOSSARY.md).
+- Manifests are validated when loaded. Every problem is reported at once with its file and field
+  path, including unknown keys, many-to-many joins, missing partition dimensions and features not
+  supported in this version.

@@ -1,0 +1,48 @@
+semantic_models:
+  - name: orders
+    table: storefront.fct_order_lines
+    description: One row per order line.
+    entities:
+      - {name: order_line, type: primary, expr: order_line_id}
+      - {name: customer, type: foreign, expr: customer_id}
+    dimensions:
+      - {name: order_date, type: time, time_granularity: day, is_partition: true}
+      - {name: channel, type: categorical}
+    measures:
+      - {name: revenue, agg: sum, expr: amount}
+      - {name: order_count, agg: count_distinct, expr: order_id}
+
+  - name: customers
+    table: storefront.dim_customers
+    description: One row per customer.
+    entities:
+      - {name: customer, type: primary, expr: customer_id}
+    dimensions:
+      - {name: region, type: categorical}
+      - {name: segment, type: categorical}
+
+metrics:
+  - name: revenue
+    type: simple
+    measure: revenue
+    description: Recognised order revenue, net of refunds.
+    tier: certified
+    owner: finance
+    synonyms: [sales, gmv]
+    max_window_days: 400
+
+  - name: order_count
+    type: simple
+    measure: order_count
+    description: Distinct orders placed.
+    tier: certified
+    owner: finance
+
+  - name: average_order_value
+    type: ratio
+    numerator: revenue
+    denominator: order_count
+    description: Revenue per distinct order.
+    tier: certified
+    owner: finance
+    synonyms: [aov]

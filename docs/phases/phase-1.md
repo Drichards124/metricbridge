@@ -68,7 +68,7 @@ A deterministic compiler is either right or wrong for a given request, so accura
 
 ## 3 · Scope
 
-**In:** native YAML manifest; N:1 / 1:1 joins; simple, ratio and trailing-window metrics;
+**In:** native YAML manifest shaped after MetricFlow (D7); N:1 / 1:1 joins; simple, ratio and trailing-window metrics;
 additivity; the three MCP tools over stdio; compiler; AST guardrails; statement timeout and row
 cap; DuckDB, Postgres and ClickHouse (local, $0); BigQuery and Snowflake (cloud, ~$0–5 a month);
 conformance suite, release gate, reference evaluator,
@@ -79,6 +79,7 @@ differential soak; parity matrix; `uvx` demo; open-source hygiene files.
 - dbt / Cube adapters → Phase 2 (they are readers into the model this phase proves; proving the model first means adapter bugs cannot hide compiler bugs).
 - BigQuery dry-run cost budgets, cumulative spend accounting → Phase 2.
 - Documentation site → Phase 2.
+- `derived` and `conversion` metrics, `percentile` / `median` / `sum_boolean` aggregations, sub-day granularities, `natural` entities → Phase 2 (D9).
 - streamable-http, auth, multi-tenancy, telemetry, org control plane, anything paid → later phases.
 - Opening outside contributions → after Phase 1 closes, in stages ([`GOVERNANCE.md`](../../GOVERNANCE.md)).
 
@@ -95,16 +96,21 @@ guide that `CLAUDE.md` imports. The spike stays read-only for reference.
 **Verify:** a deliberately failing test turns the PR check red and blocks merge; removed, it goes green.
 
 ### 1.1 · Manifest model
-Metrics, dimensions, N:1 / 1:1 joins with declared unique keys, additivity, ratio and trailing-window
-definitions, manifest version. Load-time validation with located errors (duplicate metric, undeclared
-join key, unknown column reference, N:M relationship).
+A two-layer model shaped after MetricFlow (D7): semantic models (one per table) with typed entities,
+dimensions and measures, and `simple`, `ratio` and `cumulative` metrics that reference measures.
+Joins are derived from entity types, so only N:1 and 1:1 paths exist. Snapshot measures declare how
+they roll up (D8). Deferred elements are refused by name (D9). The manifest version is a content
+hash. Load-time validation collects every problem with its file and field path: unknown keys,
+duplicates, unknown references, N:M paths, partition rules, snapshot declarations, windows. Column
+references are checked against the warehouse when an engine is attached (1.6).
 **Verify:** one invalid-manifest fixture per error class, each rejected with the expected message.
 `GLOSSARY.md` defines the model's terms (metric, dimension, grain, additivity, join cardinality) as
 they land.
 
 ### 1.2 · Rule registry, validator and signature
 Each rule declares its check **and** its signature entry in one place, so the symmetry rule holds by
-construction instead of by checklist. Fixes spike defect 1. Error codes versioned.
+construction instead of by checklist. Fixes spike defect 1: a snapshot measure with no declared
+rollup is refused when a query would sum it across time; a declared rollup is admitted (D8). Error codes versioned.
 **Verify:** symmetry test fails when a rule is registered without a signature entry; defect-1 case
 (`inventory_on_hand`, 90 days, no grain) goes red → refused.
 **Parallel registration sites:** removes one — validator and signature collapse into the registry.
@@ -116,7 +122,8 @@ BM25 index, `discover_metrics` and `get_metric_signature` on `MCPServer` (mcp 2.
 ### 1.4 · Compiler
 Dialect-aware compilation through sqlglot typed expressions: half-open date intervals
 `[start, end + 1 day)`, dialect-correct time bucketing, LEFT fact-to-dimension joins, CTEs for ratio and
-trailing metrics with widened scan windows, WHERE / HAVING placement, injected row limit,
+trailing metrics with widened scan windows, snapshot measures resolved to their declared window
+choice per period (D8), WHERE / HAVING placement, injected row limit,
 per-driver parameter style. Fixes spike defects 2–4.
 **Verify:** golden SQL snapshots per dialect; defect 2–4 probes as failing tests first.
 
@@ -183,6 +190,9 @@ publishes only from a green candidate. Maintainer briefings regenerated from the
 - **D4 · Manifest format.** _Decided:_ native YAML for Phase 1, with the dbt adapter in Phase 2 validated against these same suites.
 - **D5 · Branching and release protection.** _Decided:_ no `ple` branch. `main` is the only long-lived branch; protection sits on releases (nightly full soak blocks releases when red; release candidates must pass the full suite before a final release). Compiler PRs run the 10k-case soak pre-merge; the 3M soak runs nightly.
 - **D6 · Public from day one.** _Decided:_ the repository is public under Apache-2.0 from its first commit, so GitHub Actions minutes are free and `main` and release tags are protected by rulesets. Outside issues and pull requests stay closed until Phase 1 closes (`GOVERNANCE.md`). Releases follow a monthly train (`RELEASING.md`). The 3M claim covers the local engines; BigQuery and Snowflake are verified on every generated SQL shape (E5). No self-hosted or Fly runners.
+- **D7 · Manifest shape.** _Decided:_ follow dbt MetricFlow's two layers — semantic models with typed entities, dimensions and measures; metrics referencing measures — rather than the spike's metric-per-table. Joins derive from entity types, so N:1 / 1:1 hold by construction and N:M is refused at load. The Phase 2 dbt adapter becomes a mapping, not a translation. MetricBridge adds `tier`, `owner`, `synonyms`, `max_window_days` and a content-hash version.
+- **D8 · Snapshot measures.** _Decided:_ a snapshot measure that declares `non_additive_dimension` (window choice `min` or `max`) is answered with the value at that point in each period — for example month-end inventory. A snapshot measure without the declaration is refused when a query would sum it across time. This supersedes the v0 design's always-refuse position (§03) for declared rollups; the v1 design document at phase close records it.
+- **D9 · Phase 1 subset.** _Decided:_ `derived` and `conversion` metrics, `percentile`, `median` and `sum_boolean` aggregations, sub-day granularities and `natural` entities are refused at load as "not supported in this version", never ignored.
 
 ## 7 · Revision log
 
@@ -191,3 +201,4 @@ publishes only from a green candidate. Maintainer briefings regenerated from the
 - 12 Sep 2026 — D6 added (public from day one, contributions closed, monthly release train); E5 split into local-engine soak and cloud shape coverage; 1.0, 1.8, 1.9, 1.10 updated.
 - 12 Sep 2026 — status briefings moved out of the repository; E9 and 1.10 updated.
 - 12 Sep 2026 — structure aligned with comparable projects (MCP Python SDK, MetricFlow, sqlglot, Iceberg-Python, Pydantic): 1.0 adds `AGENTS.md`, `Makefile`, pre-commit, zizmor, CodeQL; `GLOSSARY.md` → 1.1, `SECURITY-THREAT-MODEL.md` → 1.5, `local-data-warehouses/` → 1.7, `examples/` → 1.10, documentation site → Phase 2; issue forms and a code of conduct arrive with contribution stage 1.
+- 12 Sep 2026 — D7 (MetricFlow-shaped manifest), D8 (declared snapshot rollups), D9 (Phase 1 subset); 1.1, 1.2, 1.4 and scope updated.

@@ -20,9 +20,9 @@ MetricBridge is an MCP server that inverts who writes the query:
   wrong number.
 
 ```text
-query_metric(inventory_on_hand, time_grain="month")
-→ refused: non_additive_cut — inventory is a snapshot; summing months counts stock twelve times.
-  valid_alternatives: ["day"]
+query_metric(stock_level, time_grain="month")   # a snapshot measure with no declared rollup
+→ refused: non_additive_cut — stock_level is a snapshot; summing a month of days counts stock ~30 times.
+  remediation: declare how it rolls up (for example, the last snapshot in each period), or query by day.
 ```
 
 ## Correctness is the product

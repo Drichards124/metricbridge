@@ -1,0 +1,76 @@
+# Glossary
+
+The vocabulary of the MetricBridge manifest. Terms follow dbt MetricFlow where the concept is the
+same, so a dbt project maps onto them directly.
+
+## Manifest
+
+**Manifest** — the set of YAML files declaring every semantic model and metric the gateway admits.
+A metric absent from the manifest cannot be queried: the manifest is a whitelist.
+
+**Manifest version** — a SHA-256 hash of the manifest's meaning. It changes when a definition
+changes and stays the same when only formatting, comments or file layout change. Answers carry the
+version that produced them.
+
+## Semantic models
+
+**Semantic model** — one warehouse table and everything that can honestly be asked of it: its
+entities, dimensions and measures.
+
+**Entity** — a join key. Its type decides how tables may join:
+
+| Type | Meaning |
+| --- | --- |
+| `primary` | Unique in this table; at most one per semantic model |
+| `unique` | Unique in this table |
+| `foreign` | Refers to an entity that is primary or unique elsewhere; may repeat |
+
+`natural` entities (slowly changing dimensions) are not supported in this version.
+
+**Join cardinality** — derived from entity types, never declared:
+
+| From → to | Cardinality | Admitted |
+| --- | --- | --- |
+| `foreign` → `primary` / `unique` | many-to-one | yes |
+| `primary` / `unique` ↔ `primary` / `unique` | one-to-one | yes |
+| `foreign` ↔ `foreign`, with no unique side | many-to-many | no — it fans out and double-counts |
+
+**Dimension** — a cut. `categorical` dimensions group by value; `time` dimensions carry a
+**time granularity**.
+
+**Time granularity** — `day`, `week`, `month`, `quarter` or `year`. Finer granularities are not
+supported in this version.
+
+**Partition dimension** — the one time dimension per semantic model marked `is_partition: true`.
+Every query is bounded on it, so no scan is ever unbounded. A semantic model with measures must
+have exactly one.
+
+**Grain** — what one row of a table means, such as one order line or one product per day. Joining
+tables of different grain without a unique key multiplies rows.
+
+## Measures
+
+**Measure** — an aggregation over an expression: `sum`, `count`, `count_distinct`, `min`, `max` or
+`average`. `percentile`, `median` and `sum_boolean` are not supported in this version.
+
+**Additivity** — whether a measure may be summed along a dimension. Revenue is additive across
+time; units on hand are not, because summing daily snapshots counts the same stock once per day.
+
+**Non-additive dimension** — declared on a snapshot measure to say how it rolls up across a time
+dimension: take the value at that dimension's `min` or `max` (the **window choice**) within each
+group, instead of summing. **Window groupings** name the entities the choice is made per, for
+example the last snapshot per product. A snapshot measure without this declaration is refused when
+a query would sum it across time.
+
+## Metrics
+
+**Metric** — the governed name an agent asks for, with a description, an owner and a **tier**
+(`certified`, `experimental` or `deprecated`).
+
+| Type | Definition |
+| --- | --- |
+| `simple` | One measure |
+| `ratio` | A `numerator` metric divided by a `denominator` metric, each simple or cumulative |
+| `cumulative` | A measure accumulated over a trailing **window** (such as `12 months`) or to date within a period (**grain to date**, such as `month`) |
+
+`derived` and `conversion` metrics are not supported in this version.
