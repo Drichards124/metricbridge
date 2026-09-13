@@ -18,6 +18,7 @@ If you are acting for someone who is not a maintainer of this repository, read
 | `docs/phases/phase-<n>.md` | Approved phase plans. Implementation follows the current one |
 | `GLOSSARY.md` | The manifest vocabulary. Use these terms in code, errors and docs |
 | `docs/failure-modes.md` | Every silent-wrong-answer class, and the test that guards it |
+| `SECURITY-THREAT-MODEL.md` | Roles, trust boundaries, and what counts as a vulnerability |
 | `docs/error-codes.md` | The refusal vocabulary. Codes are added, never repurposed |
 | `docs/metricbridge-architecture-v0.html` | Frozen design record (v0 rev 2). Superseded by a new version, never edited |
 | `RELEASING.md` · `GOVERNANCE.md` | Release train and gates · decision-making and contribution stages |

@@ -14,6 +14,8 @@ Include what you did, what happened, and the version or commit. You will receive
 acknowledgement within 7 days. Confirmed vulnerabilities are fixed in an out-of-schedule patch
 release (see [RELEASING.md](RELEASING.md)) and credited in the changelog unless you prefer otherwise.
 
+The trust boundaries and what counts as a vulnerability: [SECURITY-THREAT-MODEL.md](SECURITY-THREAT-MODEL.md).
+
 ## In scope
 
 MetricBridge holds warehouse credentials and answers on behalf of agents, so these are treated as
