@@ -1,11 +1,13 @@
 """The MCP surface, driven by a real client over in-memory streams — no subprocess, no network."""
 
+from collections import Counter
 from pathlib import Path
 
 import anyio
 import pytest
 from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
+from mcp.types import ElicitResult
 
 from metricbridge.manifest import load_manifest
 from metricbridge.server import build_server
@@ -13,11 +15,11 @@ from metricbridge.server import build_server
 STOREFRONT = Path(__file__).parent / "fixtures" / "storefront"
 
 
-def exchange(conversation):
+def exchange(conversation, *, elicitation=None, misses=None):
     """Run one client conversation against a server wired to the storefront manifest."""
 
     async def run():
-        server = build_server(load_manifest(STOREFRONT))
+        server = build_server(load_manifest(STOREFRONT), misses=misses)
         low = server._lowlevel_server
         async with (
             create_client_server_memory_streams() as ((cr, cw), (sr, sw)),
@@ -26,7 +28,7 @@ def exchange(conversation):
             group.start_soon(
                 lambda: low.run(sr, sw, low.create_initialization_options(), raise_exceptions=True)
             )
-            async with ClientSession(cr, cw) as session:
+            async with ClientSession(cr, cw, elicitation_callback=elicitation) as session:
                 initialised = await session.initialize()
                 result = await conversation(session, initialised)
             group.cancel_scope.cancel()
@@ -157,3 +159,68 @@ def test_a_strong_match_is_returned_without_a_clarification_prompt():
 def test_the_description_tells_the_agent_to_ask_rather_than_retry(tools):
     described = {tool.name: tool.description or "" for tool in tools.tools}
     assert "ASK THE USER" in described["discover_metrics"]
+
+
+def answering(metric: str, *, seen: list | None = None):
+    """A client whose user picks a metric when asked."""
+
+    async def callback(context, params):
+        if seen is not None:
+            seen.append(params.message)
+        return ElicitResult(action="accept", content={"metric": metric})
+
+    return callback
+
+
+async def declining(context, params):
+    return ElicitResult(action="decline")
+
+
+def test_a_question_the_catalog_cannot_answer_is_put_to_the_user():
+    """ "How much did we sell" is ambiguous between revenue and order count. A score would pick
+    one; a person is asked instead, and their answer is what gets returned."""
+    asked: list[str] = []
+
+    async def conversation(session, _):
+        return await session.call_tool("discover_metrics", {"query": "how much did we sell"})
+
+    payload = exchange(
+        conversation, elicitation=answering("revenue", seen=asked)
+    ).structured_content
+    assert payload["ok"] is True
+    assert payload["chosen_by_user"] == "revenue"
+    assert payload["confident"] is True
+    assert payload["metrics"][0]["metric"] == "revenue"
+    assert "how much did we sell" in asked[0]
+
+
+def test_a_weak_match_is_also_put_to_the_user():
+    async def conversation(session, _):
+        return await session.call_tool("discover_metrics", {"query": "customer"})
+
+    payload = exchange(conversation, elicitation=answering("order_count")).structured_content
+    assert payload["chosen_by_user"] == "order_count"
+    assert payload["metrics"][0]["metric"] == "order_count"
+
+
+def test_declining_to_choose_falls_back_to_the_catalog():
+    async def conversation(session, _):
+        return await session.call_tool("discover_metrics", {"query": "how much did we sell"})
+
+    payload = exchange(conversation, elicitation=declining).structured_content
+    assert payload["ok"] is False
+    assert payload["errors"][0]["code"] == "no_match"
+    assert "revenue" in {entry["metric"] for entry in payload["catalog"]}
+
+
+def test_unanswerable_questions_are_recorded_for_the_manifest_author():
+    """Each miss is a missing synonym, or evidence toward a real recall failure."""
+    misses: Counter = Counter()
+
+    async def conversation(session, _):
+        await session.call_tool("discover_metrics", {"query": "how much did we sell"})
+        return await session.call_tool("discover_metrics", {"query": "revenue by region"})
+
+    exchange(conversation, elicitation=answering("revenue"), misses=misses)
+    assert misses["how much did we sell"] == 1
+    assert "revenue by region" not in misses  # a confident match is not a miss

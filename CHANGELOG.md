@@ -13,6 +13,9 @@ All notable changes to MetricBridge are documented here. The format follows
   protocol errors.
 - Lexical metric discovery (BM25) over names, descriptions, synonyms and authorised cuts, filtered
   by domain and tier. Refusal suggestions use the same ranking, with fuzzy matching for typos.
+- When no metric matches confidently, `discover_metrics` asks the user which they mean (MCP
+  elicitation) where the client supports it, and otherwise returns the catalog with `no_match`.
+  Unanswerable phrasings are recorded so the missing synonym can be added to the manifest.
 - Signatures state `time_grain_required`, so a metric that can only answer at its base grain says so.
 
 - Manifest format: YAML semantic models (entities, dimensions, measures) and `simple`, `ratio` and
