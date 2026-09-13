@@ -65,6 +65,8 @@ A deterministic compiler is either right or wrong for a given request, so accura
 | E8 | Cold `uvx metricbridge demo` reaches the first refusal and first answer in < 60 s | timed script in CI |
 | E9 | Phase plan, changelog and maintainer briefings re-verified against the code at phase close | phase-close PR |
 | E10 | A release is published only from a commit whose full suite passed on the tagged candidate | release workflow refuses a red candidate |
+| E11 | Contract invariants hold over generated manifests and requests, not just fixtures | property suite (Hypothesis) on every PR from 1.3 |
+| E12 | Every silent-wrong-answer class in `docs/failure-modes.md` is guarded by a named test or recorded as unguarded | phase-close audit |
 
 ## 3 · Scope
 
@@ -115,13 +117,25 @@ rollup is refused when a query would sum it across time; a declared rollup is ad
 (`inventory_on_hand`, 90 days, no grain) goes red → refused.
 **Parallel registration sites:** removes one — validator and signature collapse into the registry.
 
+### 1.2b · Reality check against public semantic manifests
+Run the loader over MetricFlow's 154 public semantic-manifest fixtures (Apache-2.0, fetched at a
+pinned commit, not vendored) and classify each: loads, refused as a deferred feature (D9), or
+refused because our model is wrong. The third class is the finding. Publishes
+`docs/conformance/manifest-coverage.md`; runs nightly, not in PR gates, because it needs the network.
+**Verify:** the report is generated and every "our model is wrong" row has an issue or a fix.
+
 ### 1.3 · Discovery and the MCP read tools
 BM25 index, `discover_metrics` and `get_metric_signature` on `MCPServer` (mcp 2.x) over stdio.
+Dimension suggestions in refusals are ranked by the same index (names, descriptions, synonyms),
+replacing near-name matching (D13). Property-based tests start here (D10): the first invariant is
+that `validate` accepts exactly what the signature advertises, over generated manifests.
 **Verify:** golden search results for ≥ 30 phrasings; an MCP client test lists exactly three tools and round-trips the two read tools.
 
 ### 1.4 · Compiler
 Dialect-aware compilation through sqlglot typed expressions: half-open date intervals
-`[start, end + 1 day)`, dialect-correct time bucketing, LEFT fact-to-dimension joins, CTEs for ratio and
+`[start, end + 1 day)`, dialect-correct time bucketing, an aggregation time dimension that may
+differ from the partition column (both bounded, D11), `count_distinct` and `average` recomputed from
+base rows rather than rolled up (D11), LEFT fact-to-dimension joins, CTEs for ratio and
 trailing metrics with widened scan windows, snapshot measures resolved to their declared window
 choice per period (D8), WHERE / HAVING placement, injected row limit,
 per-driver parameter style. Fixes spike defects 2–4.
@@ -147,6 +161,8 @@ catalogs (storefront, subscriptions, inventory, marketplace) as native YAML. `lo
 holds one Docker Compose setup per engine, run through `make test-<engine>` targets. Hand-written reference SQL per case. Parity matrix and divergence catalog
 generated into `docs/conformance/`. Likely two PRs: harness + DuckDB, then the two Docker engines.
 **Verify:** E4 and E7. Every divergence found becomes a normalisation rule with its own test.
+The corpus includes fan-trap and chasm-trap shapes — two facts joined through a shared dimension —
+which must be refused or computed correctly, never quietly fanned out (D11).
 
 ### 1.8 · Reference evaluator and differential soak
 Pure-Python reference evaluator; seeded random request generator over the corpus (valid and invalid
@@ -192,6 +208,10 @@ publishes only from a green candidate. Maintainer briefings regenerated from the
 - **D6 · Public from day one.** _Decided:_ the repository is public under Apache-2.0 from its first commit, so GitHub Actions minutes are free and `main` and release tags are protected by rulesets. Outside issues and pull requests stay closed until Phase 1 closes (`GOVERNANCE.md`). Releases follow a monthly train (`RELEASING.md`). The 3M claim covers the local engines; BigQuery and Snowflake are verified on every generated SQL shape (E5). No self-hosted or Fly runners.
 - **D7 · Manifest shape.** _Decided:_ follow dbt MetricFlow's two layers — semantic models with typed entities, dimensions and measures; metrics referencing measures — rather than the spike's metric-per-table. Joins derive from entity types, so N:1 / 1:1 hold by construction and N:M is refused at load. The Phase 2 dbt adapter becomes a mapping, not a translation. MetricBridge adds `tier`, `owner`, `synonyms`, `max_window_days` and a content-hash version.
 - **D8 · Snapshot measures.** _Decided:_ a snapshot measure that declares `non_additive_dimension` (window choice `min` or `max`) is answered with the value at that point in each period — for example month-end inventory. A snapshot measure without the declaration is refused when a query would sum it across time. This supersedes the v0 design's always-refuse position (§03) for declared rollups; the v1 design document at phase close records it.
+- **D10 · Property-based tests, from 1.3.** _Decided:_ every milestone ships Hypothesis property tests for its own invariants, over *generated* manifests and requests. The grain bug found on 13 Sep — a weekly table would have answered a daily question — existed because every fixture was daily-partitioned and the symmetry test only checked those fixtures. The first invariant is "accepted ⟺ advertised": a grain, cut or filter is accepted exactly when the signature offers it.
+- **D11 · Modelling gaps in Phase 1.** _Decided:_ 1.4 takes the two silent-wrong-number paths common in real warehouses — an aggregation time dimension that differs from the partition column, and `count_distinct` / `average` recomputed from base rows rather than rolled up. 1.7's corpus adds fan-trap and chasm-trap shapes. SCD type 2 (`natural` entities), timezones and multi-currency each need their own design and go to Phase 2.
+- **D12 · Reality check without a private project.** _Decided:_ no real dbt project is available to borrow, so milestone 1.2b runs the loader over MetricFlow's 154 public semantic-manifest fixtures (Apache-2.0) at a pinned commit and publishes a classified coverage report. Fetched, never vendored; nightly, not in PR gates.
+- **D13 · Suggestion ranking.** _Decided:_ refusal alternatives are ordered by the join graph now (own cuts first, then per entity) and capped at 25; 1.3 ranks them with the BM25 index built for discovery; embeddings stay deferred until telemetry shows refusals that are not repaired in one turn.
 - **D9 · Phase 1 subset.** _Decided:_ `derived` and `conversion` metrics, `percentile`, `median` and `sum_boolean` aggregations, sub-day granularities and `natural` entities are refused at load as "not supported in this version", never ignored.
 
 ## 7 · Revision log
@@ -202,3 +222,4 @@ publishes only from a green candidate. Maintainer briefings regenerated from the
 - 12 Sep 2026 — status briefings moved out of the repository; E9 and 1.10 updated.
 - 12 Sep 2026 — structure aligned with comparable projects (MCP Python SDK, MetricFlow, sqlglot, Iceberg-Python, Pydantic): 1.0 adds `AGENTS.md`, `Makefile`, pre-commit, zizmor, CodeQL; `GLOSSARY.md` → 1.1, `SECURITY-THREAT-MODEL.md` → 1.5, `local-data-warehouses/` → 1.7, `examples/` → 1.10, documentation site → Phase 2; issue forms and a code of conduct arrive with contribution stage 1.
 - 12 Sep 2026 — D7 (MetricFlow-shaped manifest), D8 (declared snapshot rollups), D9 (Phase 1 subset); 1.1, 1.2, 1.4 and scope updated.
+- 13 Sep 2026 — D10–D13 added; new milestone 1.2b; E11 and E12 added; 1.3, 1.4 and 1.7 updated; `docs/failure-modes.md` created.

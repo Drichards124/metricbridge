@@ -79,7 +79,7 @@ def signature(manifest: SemanticManifest, metric_name: str) -> dict:
                 "model": dimension.model,
                 "entity": dimension.entity,
             }
-            for dimension in sorted(context.catalog.values(), key=lambda d: d.name)
+            for dimension in (context.catalog[name] for name in context.dimension_names)
         ],
         "required_filters": [
             {

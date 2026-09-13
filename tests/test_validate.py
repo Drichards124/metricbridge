@@ -238,5 +238,39 @@ def test_a_grain_finer_than_the_table_is_refused(tmp_path):
 def test_unknown_filter_field_offers_real_fields_when_nothing_is_close(manifest):
     (refusal,) = refusals(manifest, filters=[{"field": "colour", "operator": "=", "value": "red"}])
     assert refusal.code == "unknown_filter_field"
-    assert "product__category" in refusal.valid_alternatives
-    assert "revenue" in refusal.valid_alternatives
+    # Ordered as the model reads: the metric, then its own cuts, then each join's.
+    assert refusal.valid_alternatives == [
+        "revenue",
+        "channel",
+        "created_at",
+        "order_date",
+        "customer__created_at",
+        "customer__region",
+        "customer__segment",
+        "product__category",
+        "product__region",
+    ]
+
+
+def test_alternatives_are_capped_on_a_wide_table(tmp_path):
+    """A 200-cut table must not answer a typo with 200 names."""
+    dimensions = "\n".join(f"      - {{name: cut_{i:03d}, type: categorical}}" for i in range(200))
+    (tmp_path / "wide.yml").write_text(
+        "semantic_models:\n"
+        "  - name: wide\n"
+        "    table: shop.wide\n"
+        "    entities:\n"
+        "      - {name: row_id, type: primary, expr: id}\n"
+        "    dimensions:\n"
+        "      - {name: day, type: time, time_granularity: day, is_partition: true}\n"
+        f"{dimensions}\n"
+        "    measures:\n"
+        "      - {name: total, agg: sum, expr: amount}\n"
+        "metrics:\n"
+        "  - {name: total, type: simple, measure: total, description: Total.}\n"
+    )
+    wide = load_manifest(tmp_path)
+    with pytest.raises(RefusalError) as refused:
+        validate(wide, QueryRequest(metric="total", date_range=Q3, dimensions=["nothing_like_it"]))
+    (refusal,) = refused.value.refusals
+    assert len(refusal.valid_alternatives) == 25

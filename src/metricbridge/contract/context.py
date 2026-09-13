@@ -112,11 +112,20 @@ class Context:
 
     @property
     def dimension_names(self) -> list[str]:
-        return sorted(self.catalog)
+        """Ordered as the model reads: this table's own cuts, then each join's, by entity.
+
+        A flat alphabetical list buries the cut the agent most likely wants among cuts it has to
+        traverse a join to reach.
+        """
+        own = sorted(name for name, d in self.catalog.items() if d.entity is None)
+        joined = sorted(
+            (d.entity, name) for name, d in self.catalog.items() if d.entity is not None
+        )
+        return own + [name for _, name in joined]
 
     @property
     def filter_fields(self) -> list[str]:
-        return sorted([*self.catalog, self.metric.name])
+        return [self.metric.name, *self.dimension_names]
 
     @property
     def order_fields(self) -> list[str]:
@@ -267,6 +276,4 @@ def close_matches(value: str, options: list[str], limit: int = 25) -> list[str]:
     strong = difflib.get_close_matches(value, options, n=3, cutoff=0.6)
     if strong:
         return strong
-    if len(options) <= limit:
-        return list(options)
-    return difflib.get_close_matches(value, options, n=limit, cutoff=0.0)
+    return list(options)[:limit]
