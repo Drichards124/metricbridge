@@ -8,6 +8,14 @@ All notable changes to MetricBridge are documented here. The format follows
 
 ### Added
 
+- SQL compilation for simple metrics: one parameterised statement per request, rendered for DuckDB,
+  Postgres, BigQuery, Snowflake and ClickHouse. Values are always bound, never interpolated.
+- Date ranges compile to half-open bounds (`>= start`, `< end + 1 day`), so the last day is not
+  dropped on timestamp columns.
+- Measures may declare `agg_time_dimension` with `partition_lag_days`, for tables partitioned on
+  ingestion date but measured by a business date; both columns are bounded.
+- Joins to dimensions are always LEFT, and each one reports its null-key row count in the result.
+
 - MCP server (`metricbridge --manifest PATH`, stdio) exposing `discover_metrics` and
   `get_metric_signature`. Refusals come back as data (`ok: false` with structured errors), never as
   protocol errors.

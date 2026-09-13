@@ -16,6 +16,7 @@ def test_loads_every_file_in_a_directory():
         "products",
         "inventory_snapshots",
         "subscription_revenue",
+        "shipments",
     }
     assert set(manifest.metrics) == {
         "revenue",
@@ -28,6 +29,7 @@ def test_loads_every_file_in_a_directory():
         "stock_level",
         "trailing_12m_revenue",
         "revenue_month_to_date",
+        "shipments",
     }
 
 
@@ -44,6 +46,7 @@ def test_joins_are_derived_from_entity_types():
         ("orders", "products", "product", "many_to_one"),
         ("inventory_snapshots", "products", "product", "many_to_one"),
         ("subscription_revenue", "customers", "customer", "many_to_one"),
+        ("shipments", "customers", "customer", "many_to_one"),
     }
 
 

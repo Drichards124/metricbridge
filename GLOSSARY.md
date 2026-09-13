@@ -41,6 +41,11 @@ entities, dimensions and measures.
 **Time granularity** — `day`, `week`, `month`, `quarter` or `year`. Finer granularities are not
 supported in this version.
 
+**Aggregation time dimension** — the business date a measure is aggregated by, when that is not the
+partition column: a table partitioned on ingestion date is still measured by when the order
+happened. Declaring one requires **partition lag** (`partition_lag_days`), how far the partition may
+trail the business date, so the scan stays bounded without dropping late-arriving rows.
+
 **Partition dimension** — the one time dimension per semantic model marked `is_partition: true`.
 Every query is bounded on it, so no scan is ever unbounded. A semantic model with measures must
 have exactly one.
