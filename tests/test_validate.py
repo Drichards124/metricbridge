@@ -274,3 +274,30 @@ def test_alternatives_are_capped_on_a_wide_table(tmp_path):
         validate(wide, QueryRequest(metric="total", date_range=Q3, dimensions=["nothing_like_it"]))
     (refusal,) = refused.value.refusals
     assert len(refusal.valid_alternatives) == 25
+
+
+class TestMetricFilters:
+    def test_a_metric_carries_its_own_filter(self, manifest):
+        resolved = validate(manifest, request(metric="web_revenue"))
+        (applied,) = resolved.metric_filters
+        assert (applied.field, applied.operator, applied.value) == ("channel", "=", "web")
+        assert applied.dimension.model == "orders"
+        assert applied.dimension.column == "channel"
+        assert resolved.where_filters == []
+
+    def test_a_metric_filter_can_reach_through_a_join(self, manifest):
+        resolved = validate(manifest, request(metric="enterprise_revenue"))
+        (applied,) = resolved.metric_filters
+        assert applied.dimension.model == "customers"
+        assert applied.dimension.entity == "customer"
+
+    def test_metric_and_request_filters_stay_distinguishable(self, manifest):
+        resolved = validate(
+            manifest,
+            request(
+                metric="web_revenue",
+                filters=[{"field": "customer__region", "operator": "=", "value": "emea"}],
+            ),
+        )
+        assert [f.field for f in resolved.metric_filters] == ["channel"]
+        assert [f.field for f in resolved.where_filters] == ["customer__region"]

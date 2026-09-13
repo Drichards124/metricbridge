@@ -9,9 +9,10 @@ from the signature. Enforcing something the agent cannot look up first is a brok
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ..manifest import OPERATORS
 from .context import GRAIN_ORDER, Context, close_matches
 from .errors import Refusal
-from .request import MAX_ROW_LIMIT, OPERATORS
+from .request import MAX_ROW_LIMIT
 
 
 @dataclass(frozen=True)

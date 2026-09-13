@@ -128,3 +128,10 @@ def test_signature_matches_what_validate_accepts(manifest):
                 time_grain=grain,
             ),
         )
+
+
+def test_signature_discloses_what_a_metric_permanently_excludes(manifest):
+    """An agent must be able to see that "web revenue" is not all revenue."""
+    always = signature(manifest, "web_revenue")["filters"]["always_applied"]
+    assert always == [{"field": "channel", "operator": "=", "value": "web"}]
+    assert signature(manifest, "revenue")["filters"]["always_applied"] == []

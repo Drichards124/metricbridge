@@ -18,6 +18,7 @@ from typing import Literal
 import yaml
 from pydantic import ValidationError
 
+from .catalog import dimension_catalog, metric_sources, resolve
 from .model import ManifestFile, Metric, SemanticModel
 
 MANIFEST_SUFFIXES = (".yml", ".yaml")
@@ -89,16 +90,18 @@ def load_manifest(path: str | Path) -> SemanticManifest:
     if issues:
         raise ManifestError(issues)
 
-    issues = _semantic_issues(parsed)
+    models = {m.name: m for _, f in parsed for m in f.semantic_models}
+    metrics = {m.name: m for _, f in parsed for m in f.metrics}
+    joins = _joins(models.values())
+
+    issues = _semantic_issues(parsed) + _metric_filter_issues(parsed, models, metrics, joins)
     if issues:
         raise ManifestError(issues)
 
-    models = {m.name: m for _, f in parsed for m in f.semantic_models}
-    metrics = {m.name: m for _, f in parsed for m in f.metrics}
     return SemanticManifest(
         semantic_models=models,
         metrics=metrics,
-        joins=_joins(models.values()),
+        joins=joins,
         version=_version(models.values(), metrics.values()),
     )
 
@@ -297,6 +300,40 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                             f"metrics[{k}].{field}",
                             f"{field} must be a simple or cumulative metric; "
                             f"{reference!r} is a ratio",
+                        )
+                    )
+    return issues
+
+
+def _metric_filter_issues(parsed, models, metrics, joins) -> list[ManifestIssue]:
+    """A filter is part of the definition, so it is checked at load time, not per query."""
+    issues: list[ManifestIssue] = []
+    for file, document in parsed:
+        for k, metric in enumerate(document.metrics):
+            if not metric.filters:
+                continue
+            _, owners = metric_sources(models, metrics, metric)
+            if not owners:
+                continue  # an unknown measure is already reported
+            catalog = dimension_catalog(models, joins, owners[0])
+            for i, declared in enumerate(metric.filters):
+                outcome = resolve(catalog, declared.field)
+                path = f"metrics[{k}].filters[{i}].field"
+                if outcome is None:
+                    issues.append(
+                        ManifestIssue(
+                            file,
+                            path,
+                            f"{declared.field!r} is not an authorised cut of {metric.name!r}",
+                        )
+                    )
+                elif isinstance(outcome, list):
+                    issues.append(
+                        ManifestIssue(
+                            file,
+                            path,
+                            f"{declared.field!r} exists in more than one table reachable from "
+                            f"{metric.name!r}; use one of: {', '.join(outcome)}",
                         )
                     )
     return issues

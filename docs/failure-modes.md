@@ -50,6 +50,8 @@ request is rejected, so the case cannot arise · **unguarded** — known, not ye
 | Enforced rule that the signature never advertised | The agent wastes turns discovering constraints | guarded | `tests/test_signature.py::test_every_rule_contributes_to_the_signature` |
 | Undocumented error code | Agents branch on a code no document describes | guarded | `tests/test_error_codes.py` |
 | A constraint that only fixtures exercise | Real manifests differ from the ones we wrote | unguarded | property tests from 1.3 (D10); public manifests in 1.2b (D12) |
+| A certified definition that cannot be written down | "Revenue" really means revenue excluding refunds; without metric filters the manifest states something else | guarded | `tests/test_manifest_valid.py::test_metric_level_filters_are_part_of_the_definition` |
+| A metric filter naming a cut the metric cannot reach | The definition would silently not apply | guarded | `tests/test_manifest_invalid.py` (`metric-filter-on-unknown-field`) |
 
 ## Execution and cost
 

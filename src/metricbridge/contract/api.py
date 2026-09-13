@@ -5,10 +5,10 @@ advertised. Everything here happens before SQL exists: a refusal names the metri
 ("region is not a cut of inventory_on_hand"), never the database's ("column not found").
 """
 
-from ..manifest import SemanticManifest
+from ..manifest import OPERATORS, SemanticManifest
 from .context import Resolved, build_context, close_matches
 from .errors import Refusal, RefusalError
-from .request import DEFAULT_ROW_LIMIT, MAX_ROW_LIMIT, OPERATORS, QueryRequest
+from .request import DEFAULT_ROW_LIMIT, MAX_ROW_LIMIT, QueryRequest
 from .rules import RULES
 
 
@@ -48,6 +48,7 @@ def validate(manifest: SemanticManifest, request: QueryRequest) -> Resolved:
         time_grain=request.time_grain,
         row_limit=request.row_limit,
         snapshot=context.snapshot,
+        metric_filters=context.metric_filters,
         notices=context.notices,
     )
 
@@ -89,7 +90,13 @@ def signature(manifest: SemanticManifest, metric_name: str) -> dict:
                 "max_window_days": metric.max_window_days,
             }
         ],
-        "filters": {"fields": context.filter_fields, "operators": list(OPERATORS)},
+        "filters": {
+            "fields": context.filter_fields,
+            "operators": list(OPERATORS),
+            "always_applied": [
+                {"field": f.field, "operator": f.operator, "value": f.value} for f in metric.filters
+            ],
+        },
         "order_by": {
             "fields": "any requested dimension, 'period', or the metric itself",
             "directions": ["asc", "desc"],

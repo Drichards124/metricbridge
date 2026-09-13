@@ -22,6 +22,8 @@ def test_loads_every_file_in_a_directory():
         "order_count",
         "average_order_value",
         "gross_revenue",
+        "web_revenue",
+        "enterprise_revenue",
         "inventory_on_hand",
         "stock_level",
         "trailing_12m_revenue",
@@ -120,3 +122,17 @@ def test_declared_values_are_matched_case_insensitively(tmp_path):
     assert model.dimensions[0].time_granularity == "day"
     assert model.measures[0].agg == "sum"
     assert manifest.metrics["revenue"].type == "simple"
+
+
+def test_metric_level_filters_are_part_of_the_definition():
+    """A certified definition often is a filter: "revenue" means amount excluding refunds."""
+    metrics = load_manifest(STOREFRONT).metrics
+    (web,) = metrics["web_revenue"].filters
+    assert (web.field, web.operator, web.value) == ("channel", "=", "web")
+
+    (enterprise,) = metrics["enterprise_revenue"].filters
+    assert enterprise.field == "customer__segment"
+    assert enterprise.operator == "in"  # declared as IN; matched case-insensitively
+    assert enterprise.value == ["enterprise", "strategic"]
+
+    assert metrics["revenue"].filters == []
