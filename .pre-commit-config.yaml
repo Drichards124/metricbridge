@@ -1,0 +1,35 @@
+# Fast subset of the gates, run on each commit. Ruff comes from uv.lock, so its version has one
+# source of truth. Install once with `uvx pre-commit install`; the full gates are `make check`.
+fail_fast: true
+# The v0 design record is frozen: superseded by a new version, never edited — not even by a fixer.
+exclude: ^docs/metricbridge-architecture-v0\.html$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --locked ruff format
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: ruff
+        name: ruff check
+        entry: uv run --locked ruff check --fix --exit-non-zero-on-fix
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: uv-lock-check
+        name: uv.lock is up to date
+        entry: uv lock --check
+        language: system
+        files: ^(pyproject\.toml|uv\.lock)$
+        pass_filenames: false

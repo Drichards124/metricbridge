@@ -25,10 +25,8 @@ jobs:
         with:
           enable-cache: true
       - name: Lint
-        run: uv run --locked ruff check
+        run: make lint
       - name: Format
-        run: uv run --locked ruff format --check
-      - name: Test on Python 3.11 (lowest supported)
-        run: uv run --locked --python 3.11 pytest
-      - name: Test on Python 3.14 (latest)
-        run: uv run --locked --python 3.14 pytest
+        run: make format-check
+      - name: Test on the lowest and latest supported Python
+        run: make test
