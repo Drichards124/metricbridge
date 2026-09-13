@@ -26,7 +26,7 @@ direction, approves plans and merges every change.
 | Stage | Issues | Pull requests | Entered when |
 | --- | --- | --- | --- |
 | 0 — closed (current) | collaborators only | collaborators only | — |
-| 1 — issues open | everyone | collaborators only | Phase 1 closes |
+| 1 — issues open | everyone | collaborators only | Phase 1 closes; issue forms and a code of conduct land first |
 | 2 — PRs open | everyone | everyone | the contributor licensing model is decided |
 
 **Open decision before Stage 2:** a Contributor License Agreement or a Developer Certificate of

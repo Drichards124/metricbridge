@@ -15,9 +15,6 @@ dependencies = [
 [dependency-groups]
 dev = ["pytest>=8.2", "ruff>=0.6"]
 
-[project.scripts]
-metricbridge = "metricbridge.server:main"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -27,6 +24,7 @@ packages = ["src/metricbridge"]
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["spike"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
