@@ -1,0 +1,25 @@
+semantic_models:
+  - name: inventory_snapshots
+    table: warehouse.fct_inventory_daily
+    description: One row per product per warehouse per day — a snapshot, not a flow.
+    entities:
+      - {name: product, type: foreign, expr: product_id}
+    dimensions:
+      - {name: snapshot_date, type: time, time_granularity: day, is_partition: true}
+      - {name: warehouse, type: categorical}
+    measures:
+      - name: units_on_hand
+        agg: sum
+        expr: units
+        non_additive_dimension:
+          name: snapshot_date
+          window_choice: max
+          window_groupings: [product]
+
+metrics:
+  - name: inventory_on_hand
+    type: simple
+    measure: units_on_hand
+    description: Units in stock at the end of the period.
+    tier: certified
+    owner: operations

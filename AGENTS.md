@@ -16,6 +16,7 @@ If you are acting for someone who is not a maintainer of this repository, read
 | `tests/` | The test suite |
 | `spike/` | Throwaway code that validated the stack. The implementation never imports from it |
 | `docs/phases/phase-<n>.md` | Approved phase plans. Implementation follows the current one |
+| `GLOSSARY.md` | The manifest vocabulary. Use these terms in code, errors and docs |
 | `docs/metricbridge-architecture-v0.html` | Frozen design record (v0 rev 2). Superseded by a new version, never edited |
 | `RELEASING.md` · `GOVERNANCE.md` | Release train and gates · decision-making and contribution stages |
 
