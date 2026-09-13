@@ -12,8 +12,8 @@ All notable changes to MetricBridge are documented here. The format follows
   The database is opened read-only, with file access disabled.
 - Every answer states what is absent: `missing_periods` lists periods the data never produced,
   including a trailing-window period with no rows of its own; `null_key_rows` counts rows with an
-  empty join key per joined entity (`null` for ratio and cumulative metrics, which do not count
-  them yet); and `row_limit_reached` says rows were cut off, in which case neither of the other
+  empty join key per joined entity — not keys that match no row in the joined table — and is
+  `null` for ratio and cumulative metrics, which do not count them yet; and `row_limit_reached` says rows were cut off, in which case neither of the other
   two is claimed.
 - `--statement-timeout SECONDS` (default 30) stops a long-running statement with
   `statement_timeout`. A result above the row ceiling is refused with `row_cap_exceeded` rather

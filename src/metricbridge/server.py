@@ -71,8 +71,10 @@ query itself.
 
 The reply states every absence instead of leaving a gap. `missing_periods` lists periods the data \
 never produced; they are absent, not zero. `null_key_rows` counts, per joined entity, rows whose \
-join key was empty; `null` means this metric shape does not count them. `row_limit_reached` means \
-rows were cut off, so nothing is claimed about the rest. Exact decimals come back as strings."""
+join key was empty. It does not count keys that match no row in the joined table, so `{}` does not \
+mean every row reconciled. `null` means nothing was counted: either this metric shape does not \
+count, or the row limit cut the answer off. `row_limit_reached` means rows were cut off, so \
+nothing is claimed about the rest. Exact decimals come back as strings."""
 
 # Raised by discovery rather than by a contract rule, so it lives here, not in the rule registry.
 DISCOVERY_CODES = frozenset({"no_match"})
