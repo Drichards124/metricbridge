@@ -4,11 +4,12 @@ Every refusal carries a stable code, the offending field and value, a remediatio
 authorised alternatives — so the agent's next attempt is a lookup rather than a guess.
 """
 
+import textwrap
 from pathlib import Path
 
 import pytest
 
-from metricbridge.contract import QueryRequest, RefusalError, validate
+from metricbridge.contract import QueryRequest, RefusalError, signature, validate
 from metricbridge.manifest import load_manifest
 
 STOREFRONT = Path(__file__).parent / "fixtures" / "storefront"
@@ -194,3 +195,48 @@ class TestRefusals:
         assert payload["ok"] is False
         assert payload["errors"][0]["code"] == "unknown_dimension"
         assert "valid_alternatives" in payload["errors"][0]
+
+
+WEEKLY = textwrap.dedent("""\
+    semantic_models:
+      - name: weekly_sales
+        table: shop.weekly_sales
+        entities:
+          - {name: week_row, type: primary, expr: id}
+        dimensions:
+          - {name: week_start, type: time, time_granularity: week, is_partition: true}
+        measures:
+          - {name: weekly_revenue, agg: sum, expr: amount}
+    metrics:
+      - {name: weekly_revenue, type: simple, measure: weekly_revenue, description: Weekly revenue.}
+    """)
+
+
+def test_a_grain_finer_than_the_table_is_refused(tmp_path):
+    """A weekly table cannot answer a daily question: those rows do not exist."""
+    (tmp_path / "weekly.yml").write_text(WEEKLY)
+    weekly = load_manifest(tmp_path)
+
+    with pytest.raises(RefusalError) as refused:
+        validate(weekly, QueryRequest(metric="weekly_revenue", date_range=Q3, time_grain="day"))
+    (refusal,) = refused.value.refusals
+    assert refusal.code == "unsupported_time_grain"
+    assert refusal.valid_alternatives == ["week", "month", "quarter", "year"]
+    assert "week" in refusal.message
+
+    assert signature(weekly, "weekly_revenue")["time_grains"] == [
+        "week",
+        "month",
+        "quarter",
+        "year",
+    ]
+    assert validate(
+        weekly, QueryRequest(metric="weekly_revenue", date_range=Q3, time_grain="quarter")
+    )
+
+
+def test_unknown_filter_field_offers_real_fields_when_nothing_is_close(manifest):
+    (refusal,) = refusals(manifest, filters=[{"field": "colour", "operator": "=", "value": "red"}])
+    assert refusal.code == "unknown_filter_field"
+    assert "product__category" in refusal.valid_alternatives
+    assert "revenue" in refusal.valid_alternatives

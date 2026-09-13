@@ -71,12 +71,21 @@ def _dimensions(context: Context) -> list[Refusal]:
 
 def _time_grain(context: Context) -> list[Refusal]:
     grain = context.request.time_grain
-    if grain is None or grain in GRAIN_ORDER:
+    if grain is None or grain in context.supported_grains:
         return []
+    if context.rolls_up_undeclared:
+        return []  # the snapshot rule explains this one, and one refusal beats two
+    known = grain in GRAIN_ORDER
+    reason = (
+        f"{grain!r} is finer than {context.base_model.name!r}, which is stored at "
+        f"{context.base_grain!r} grain"
+        if known
+        else f"{grain!r} is not a time grain this gateway serves"
+    )
     return [
         Refusal(
             code="unsupported_time_grain",
-            message=f"{grain!r} is not a time grain this gateway serves.",
+            message=f"{reason}.",
             field="time_grain",
             offending_value=grain,
             remediation="Choose a grain from the metric signature.",

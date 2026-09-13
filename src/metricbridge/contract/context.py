@@ -258,5 +258,15 @@ def build_context(manifest: SemanticManifest, request: QueryRequest, metric: Met
     return context
 
 
-def close_matches(value: str, options: list[str]) -> list[str]:
-    return difflib.get_close_matches(value, options, n=3, cutoff=0.4) or options[:3]
+def close_matches(value: str, options: list[str], limit: int = 25) -> list[str]:
+    """Near names for a typo; otherwise what is actually on offer.
+
+    A weak match costs the agent a turn: `colour` is not a misspelling of `channel`, and offering
+    it as one sends the next request somewhere just as wrong.
+    """
+    strong = difflib.get_close_matches(value, options, n=3, cutoff=0.6)
+    if strong:
+        return strong
+    if len(options) <= limit:
+        return list(options)
+    return difflib.get_close_matches(value, options, n=limit, cutoff=0.0)
