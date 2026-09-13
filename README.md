@@ -34,7 +34,7 @@ requests per local engine. An engine is listed as supported only while its parit
 
 ## Project status
 
-- [Architecture — detailed status](docs/architecture-detailed.md): what is built, how it was verified, what is next
+- [Phase 1 milestone](https://github.com/Drichards124/metricbridge/milestone/1): progress, one issue per deliverable
 - [Phase 1 plan](docs/phases/phase-1.md)
 - [Design record, v0](docs/metricbridge-architecture-v0.html)
 - [Releasing](RELEASING.md) · [Governance](GOVERNANCE.md) · [Changelog](CHANGELOG.md)

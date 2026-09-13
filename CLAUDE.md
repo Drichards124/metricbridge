@@ -5,8 +5,6 @@ governed metrics in structured form; MetricBridge compiles, guards and executes 
 
 | Document | Role |
 | --- | --- |
-| `docs/architecture.html` | Living summary — what it is, completed, in progress, next |
-| `docs/architecture-detailed.md` | Living detail — what was built and how it was verified, what's next, direction |
 | `docs/phases/phase-<n>.md` | Phase plans, written with `/plan-phase <n>` |
 | `docs/metricbridge-architecture-v0.html` | Frozen design record (v0 rev 2). Superseded by a new version, never edited |
 
@@ -50,16 +48,15 @@ then **wait for the owner's explicit approval**. Answer their questions and revi
 then open the PR with the approved summary as its body. The summary is what gets approved, not the
 diff. Keep it readable in five minutes and link to detail.
 
-## Architecture docs — at every phase close
+## Phase close
 
-In the PR that closes a phase (and in any PR that changes the architecture):
+In the PR that closes a phase:
 
-1. **`docs/architecture.html`** — keep it a summary: what MetricBridge is, status per phase
-   (completed / in progress / next), engines and their parity status, next steps.
-2. **`docs/architecture-detailed.md`** — completed work in detail (what was built, where it lives,
-   how it was verified, divergences found), what is next, where the project is headed, decision log.
-3. Every _completed_ claim cites the code path and the test that proves it, re-run before writing.
-4. A design change gets a new versioned design document; prior versions stay readable.
+1. Every _completed_ claim in the phase plan and `CHANGELOG.md` is re-verified against the code and
+   the tests that prove it.
+2. A design change gets a new versioned design document in `docs/`; prior versions stay readable.
+3. The maintainer's status briefings are regenerated from the code. They live outside this
+   repository; public progress is the phase's GitHub milestone, its issues, and `CHANGELOG.md`.
 
 ## Correctness rules
 

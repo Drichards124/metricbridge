@@ -63,7 +63,7 @@ A deterministic compiler is either right or wrong for a given request, so accura
 | E6 | AST guardrails reject every mutated unsafe statement | guardrail mutation suite, 100% |
 | E7 | Parity matrix and divergence catalog generated from the latest run | `docs/conformance/` artifacts, regenerated in CI |
 | E8 | Cold `uvx metricbridge demo` reaches the first refusal and first answer in < 60 s | timed script in CI |
-| E9 | Architecture docs updated from code at phase close | phase-close PR |
+| E9 | Phase plan, changelog and maintainer briefings re-verified against the code at phase close | phase-close PR |
 | E10 | A release is published only from a commit whose full suite passed on the tagged candidate | release workflow refuses a red candidate |
 
 ## 3 · Scope
@@ -156,7 +156,7 @@ Snowflake 30-day trial only when 1.8 is merged.
 `uvx metricbridge demo` (refusal first), README usage section and parity matrix, first release
 train per [`RELEASING.md`](../../RELEASING.md). Release workflow: a `vX.Y.ZrcN` tag runs the full suite on
 the tagged commit and a clean-machine install, then publishes a PyPI pre-release; a final tag
-publishes only from a green candidate. Architecture docs updated from code.
+publishes only from a green candidate. Maintainer briefings regenerated from the code.
 **Verify:** E8, E9, E10 — a deliberately red candidate is refused publication.
 **Owner:** create the PyPI project and approve trusted publishing; the first publish is yours.
 
@@ -169,7 +169,7 @@ publishes only from a green candidate. Architecture docs updated from code.
 
 ## 6 · Decisions — all decided by the owner, 12 Sep 2026
 
-- **D1 · Phase 1 scope.** The v0 doc calls "Phase 1" discovery only, with no SQL. Your ask is a validated open-source core across multiple databases, which spans v0 phases 1–2 plus the §08 conformance work. _Decided:_ your reading. This plan renumbers accordingly, and the v0 roadmap is marked superseded in `docs/architecture.html`.
+- **D1 · Phase 1 scope.** The v0 doc calls "Phase 1" discovery only, with no SQL. Your ask is a validated open-source core across multiple databases, which spans v0 phases 1–2 plus the §08 conformance work. _Decided:_ your reading. This plan renumbers accordingly, and the v0 roadmap is superseded by this plan.
 - **D2 · Accuracy definition.** _Decided:_ zero tolerated mismatches, plus a published statistical bound from ≥ 3M randomised requests per engine (§2). The alternative is a fixed case count with no statistical claim.
 - **D3 · Cloud engines in Phase 1.** (a) include BigQuery + Snowflake as 1.9, (b) move them to Phase 2 and ship Phase 1 on three local engines. _Decided:_ (a). Your wedge audience runs Snowflake and BigQuery, and running both costs about $0–5 a month.
 - **D4 · Manifest format.** _Decided:_ native YAML for Phase 1, with the dbt adapter in Phase 2 validated against these same suites.
@@ -181,3 +181,4 @@ publishes only from a green candidate. Architecture docs updated from code.
 - 12 Sep 2026 — proposed.
 - 12 Sep 2026 — approved: D1–D4 as recommended; D5 (no `ple`, release gate) added; E10 added; 1.8, 1.9, 1.10 updated.
 - 12 Sep 2026 — D6 added (public from day one, contributions closed, monthly release train); E5 split into local-engine soak and cloud shape coverage; 1.0, 1.8, 1.9, 1.10 updated.
+- 12 Sep 2026 — status briefings moved out of the repository; E9 and 1.10 updated.
