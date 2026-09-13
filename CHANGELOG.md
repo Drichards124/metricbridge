@@ -8,6 +8,11 @@ All notable changes to MetricBridge are documented here. The format follows
 
 ### Added
 
+- Generated SQL is re-parsed and asserted before it can be executed: one SELECT, declared tables
+  only, every scan bounded on a time column (including inside CTEs), no `SELECT *`, and a row limit
+  within the ceiling. Failures return `guardrail_violation`.
+- `SECURITY-THREAT-MODEL.md` documents the trust boundaries and what counts as a vulnerability.
+
 - Cumulative metrics compile: trailing windows and grain-to-date, as anchor periods joined to the
   rows their window covers. The scan is widened to cover the lookback, and `CompiledQuery` reports
   both the output window and the scan window.

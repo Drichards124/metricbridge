@@ -69,8 +69,9 @@ request is rejected, so the case cannot arise · **unguarded** — known, not ye
 
 | Failure | What goes wrong | Status | Guard |
 | --- | --- | --- | --- |
-| Agent-supplied SQL text | Prompt injection reaches the query | refused | agents send structured requests only; no raw-SQL path |
+| Agent-supplied SQL text | Prompt injection reaches the query | refused | agents send structured requests only; no raw-SQL path, and no tool accepts one (`tests/test_server.py::test_no_tool_accepts_sql`) |
 | Filter value interpolated into SQL | Injection through a value | guarded | `tests/test_compiler.py::TestFilters::test_values_are_bound_never_interpolated` |
-| Compiler bug that no rule catches | Generated SQL is valid and wrong | unguarded | 1.5 re-parses and asserts on the AST; 1.8 differential soak |
+| Compiler bug that drops a bound or reaches a new table | Generated SQL is valid and wrong | guarded | the statement is re-parsed and asserted before execution (`tests/test_guardrail.py::TestMutants`) |
+| Compiler bug the guardrails cannot see | Generated SQL is valid, bounded, and still returns a wrong number | unguarded | the guardrails check shape, not arithmetic; 1.7 conformance and the 1.8 differential soak are what catch this |
 | Same request, different answer per engine | Two warehouses disagree and nobody notices | unguarded | 1.7 parity matrix |
 | Result values in logs or traces | Observability becomes a data leak | unguarded | telemetry never records values (Phase 4 enforces) |
