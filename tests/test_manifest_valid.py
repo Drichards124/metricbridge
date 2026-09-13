@@ -96,3 +96,27 @@ def test_version_is_deterministic_and_tracks_content_not_formatting(tmp_path):
 
     orders.write_text(orders.read_text().replace("expr: amount}", "expr: amount_net}"))
     assert load_manifest(copy).version != original
+
+
+def test_declared_values_are_matched_case_insensitively(tmp_path):
+    """Real manifests write `agg: SUM` and `type: SIMPLE`; refusing those is an interop bug."""
+    (tmp_path / "shouty.yml").write_text(
+        "semantic_models:\n"
+        "  - name: orders\n"
+        "    table: shop.orders\n"
+        "    entities:\n"
+        "      - {name: order, type: PRIMARY, expr: order_id}\n"
+        "    dimensions:\n"
+        "      - {name: order_date, type: TIME, time_granularity: DAY, is_partition: true}\n"
+        "    measures:\n"
+        "      - {name: revenue, agg: SUM, expr: amount}\n"
+        "metrics:\n"
+        "  - {name: revenue, type: SIMPLE, measure: revenue, description: Revenue.}\n"
+    )
+    manifest = load_manifest(tmp_path)
+    model = manifest.semantic_models["orders"]
+    assert model.entities[0].type == "primary"
+    assert model.dimensions[0].type == "time"
+    assert model.dimensions[0].time_granularity == "day"
+    assert model.measures[0].agg == "sum"
+    assert manifest.metrics["revenue"].type == "simple"

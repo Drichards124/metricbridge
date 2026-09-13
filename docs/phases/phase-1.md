@@ -118,11 +118,16 @@ rollup is refused when a query would sum it across time; a declared rollup is ad
 **Parallel registration sites:** removes one — validator and signature collapse into the registry.
 
 ### 1.2b · Reality check against public semantic manifests
-Run the loader over MetricFlow's 154 public semantic-manifest fixtures (Apache-2.0, fetched at a
-pinned commit, not vendored) and classify each: loads, refused as a deferred feature (D9), or
-refused because our model is wrong. The third class is the finding. Publishes
-`docs/conformance/manifest-coverage.md`; runs nightly, not in PR gates, because it needs the network.
-**Verify:** the report is generated and every "our model is wrong" row has an issue or a fix.
+A **feature census**, not a load. MetricFlow's fixture manifests are written in dbt's own YAML
+(`semantic_model:` wrappers, `node_relation`, nested `type_params`), so our loader would reject all
+of them on shape and tell us nothing. The question worth answering is whether our *model* can
+express what real semantic layers express, so the census counts the modelling features those
+manifests use — metric types, aggregations, entity types, snapshot roll-ups, aggregation time
+dimensions, multi-hop joins, offsets, SCD — and maps each to our status: supported, deferred (D9),
+or an unmodelled gap. Fetched at a pinned commit by sparse shallow clone, never vendored.
+Publishes `docs/conformance/manifest-coverage.md`.
+**Verify:** feature extraction is unit-tested against local fixtures, so PR gates need no network;
+every gap the census finds becomes an issue or a plan change.
 
 ### 1.3 · Discovery and the MCP read tools
 BM25 index, `discover_metrics` and `get_metric_signature` on `MCPServer` (mcp 2.x) over stdio.
@@ -210,7 +215,7 @@ publishes only from a green candidate. Maintainer briefings regenerated from the
 - **D8 · Snapshot measures.** _Decided:_ a snapshot measure that declares `non_additive_dimension` (window choice `min` or `max`) is answered with the value at that point in each period — for example month-end inventory. A snapshot measure without the declaration is refused when a query would sum it across time. This supersedes the v0 design's always-refuse position (§03) for declared rollups; the v1 design document at phase close records it.
 - **D10 · Property-based tests, from 1.3.** _Decided:_ every milestone ships Hypothesis property tests for its own invariants, over *generated* manifests and requests. The grain bug found on 13 Sep — a weekly table would have answered a daily question — existed because every fixture was daily-partitioned and the symmetry test only checked those fixtures. The first invariant is "accepted ⟺ advertised": a grain, cut or filter is accepted exactly when the signature offers it.
 - **D11 · Modelling gaps in Phase 1.** _Decided:_ 1.4 takes the two silent-wrong-number paths common in real warehouses — an aggregation time dimension that differs from the partition column, and `count_distinct` / `average` recomputed from base rows rather than rolled up. 1.7's corpus adds fan-trap and chasm-trap shapes. SCD type 2 (`natural` entities), timezones and multi-currency each need their own design and go to Phase 2.
-- **D12 · Reality check without a private project.** _Decided:_ no real dbt project is available to borrow, so milestone 1.2b runs the loader over MetricFlow's 154 public semantic-manifest fixtures (Apache-2.0) at a pinned commit and publishes a classified coverage report. Fetched, never vendored; nightly, not in PR gates.
+- **D12 · Reality check without a private project.** _Decided:_ no real dbt project is available to borrow, so milestone 1.2b takes a feature census of MetricFlow's public semantic-manifest fixtures (Apache-2.0) at a pinned commit and publishes `docs/conformance/manifest-coverage.md`. A census rather than a load: those fixtures use dbt's YAML shape, so loading them would measure format translation, not modelling coverage. The gaps it finds drive plan changes.
 - **D13 · Suggestion ranking.** _Decided:_ refusal alternatives are ordered by the join graph now (own cuts first, then per entity) and capped at 25; 1.3 ranks them with the BM25 index built for discovery; embeddings stay deferred until telemetry shows refusals that are not repaired in one turn.
 - **D9 · Phase 1 subset.** _Decided:_ `derived` and `conversion` metrics, `percentile`, `median` and `sum_boolean` aggregations, sub-day granularities and `natural` entities are refused at load as "not supported in this version", never ignored.
 

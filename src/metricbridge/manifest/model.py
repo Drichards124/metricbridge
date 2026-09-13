@@ -36,9 +36,11 @@ _WINDOW = re.compile(r"^\s*(\d+)\s+(day|week|month|quarter|year)s?\s*$")
 def _choice(
     value: object, supported: tuple[str, ...], deferred: tuple[str, ...], noun: str
 ) -> object:
-    if value in supported:
-        return value
-    if value in deferred:
+    """Match declared values case-insensitively: real manifests write `agg: SUM`."""
+    folded = value.lower() if isinstance(value, str) else value
+    if folded in supported:
+        return folded
+    if folded in deferred:
         raise ValueError(f"{noun} {value!r} is not supported in this version")
     raise ValueError(f"unknown {noun} {value!r}; expected one of: {', '.join(supported)}")
 
@@ -82,6 +84,11 @@ class Dimension(_Expressed):
     is_partition: bool = False
     description: str = ""
 
+    @field_validator("type", mode="before")
+    @classmethod
+    def supported_kind(cls, value: object) -> object:
+        return _choice(value, ("categorical", "time"), (), "dimension type")
+
     @field_validator("time_granularity", mode="before")
     @classmethod
     def supported_granularity(cls, value: object) -> object:
@@ -114,6 +121,11 @@ class NonAdditiveDimension(_Strict):
     name: str
     window_choice: Literal["min", "max"]
     window_groupings: list[str] = Field(default_factory=list)
+
+    @field_validator("window_choice", mode="before")
+    @classmethod
+    def supported_choice(cls, value: object) -> object:
+        return _choice(value, ("min", "max"), (), "window choice")
 
 
 class Measure(_Expressed):
@@ -207,6 +219,11 @@ class Metric(_Strict):
     @classmethod
     def supported_type(cls, value: object) -> object:
         return _choice(value, METRIC_TYPES, DEFERRED_METRIC_TYPES, "metric type")
+
+    @field_validator("tier", mode="before")
+    @classmethod
+    def supported_tier(cls, value: object) -> object:
+        return _choice(value, ("certified", "experimental", "deprecated"), (), "tier")
 
     @field_validator("window", mode="before")
     @classmethod
