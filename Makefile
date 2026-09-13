@@ -2,7 +2,7 @@
 
 PYTHONS := 3.11 3.14
 
-.PHONY: check lint format format-check test sync
+.PHONY: check lint format format-check test sync census
 
 check: lint format-check test
 
@@ -23,3 +23,7 @@ test:
 
 sync:
 	uv sync --locked
+
+# Feature census of public semantic manifests (network; see scripts/manifest_census.py).
+census:
+	uv run --locked python scripts/manifest_census.py

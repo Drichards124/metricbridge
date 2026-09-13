@@ -118,11 +118,26 @@ rollup is refused when a query would sum it across time; a declared rollup is ad
 **Parallel registration sites:** removes one — validator and signature collapse into the registry.
 
 ### 1.2b · Reality check against public semantic manifests
-Run the loader over MetricFlow's 154 public semantic-manifest fixtures (Apache-2.0, fetched at a
-pinned commit, not vendored) and classify each: loads, refused as a deferred feature (D9), or
-refused because our model is wrong. The third class is the finding. Publishes
-`docs/conformance/manifest-coverage.md`; runs nightly, not in PR gates, because it needs the network.
-**Verify:** the report is generated and every "our model is wrong" row has an issue or a fix.
+A **feature census**, not a load. MetricFlow's fixture manifests are written in dbt's own YAML
+(`semantic_model:` wrappers, `node_relation`, nested `type_params`), so our loader would reject all
+of them on shape and tell us nothing. The question worth answering is whether our *model* can
+express what real semantic layers express, so the census counts the modelling features those
+manifests use — metric types, aggregations, entity types, snapshot roll-ups, aggregation time
+dimensions, multi-hop joins, offsets, SCD — and maps each to our status: supported, deferred (D9),
+or an unmodelled gap. Fetched at a pinned commit by sparse shallow clone, never vendored.
+Publishes `docs/conformance/manifest-coverage.md`.
+**Verify:** feature extraction is unit-tested against local fixtures, so PR gates need no network;
+every gap the census finds becomes an issue or a plan change.
+
+### 1.2c · Metric-level filters
+A certified definition often *is* a filter — "revenue" means amount excluding refunds and trials.
+The census found 16 uses across the public corpus, and without this people cannot express their
+real definitions in a MetricBridge manifest (D14). Declared structurally, like a request filter
+(`field`, `operator`, `value`), never as raw SQL: the compiler builds the syntax and the driver
+carries the values. The signature advertises it, so an agent can see what a metric permanently
+excludes.
+**Verify:** a metric with a declared filter compiles it into every query; the filter appears in the
+signature; a filter naming an unauthorised field is refused at load.
 
 ### 1.3 · Discovery and the MCP read tools
 BM25 index, `discover_metrics` and `get_metric_signature` on `MCPServer` (mcp 2.x) over stdio.
@@ -210,7 +225,8 @@ publishes only from a green candidate. Maintainer briefings regenerated from the
 - **D8 · Snapshot measures.** _Decided:_ a snapshot measure that declares `non_additive_dimension` (window choice `min` or `max`) is answered with the value at that point in each period — for example month-end inventory. A snapshot measure without the declaration is refused when a query would sum it across time. This supersedes the v0 design's always-refuse position (§03) for declared rollups; the v1 design document at phase close records it.
 - **D10 · Property-based tests, from 1.3.** _Decided:_ every milestone ships Hypothesis property tests for its own invariants, over *generated* manifests and requests. The grain bug found on 13 Sep — a weekly table would have answered a daily question — existed because every fixture was daily-partitioned and the symmetry test only checked those fixtures. The first invariant is "accepted ⟺ advertised": a grain, cut or filter is accepted exactly when the signature offers it.
 - **D11 · Modelling gaps in Phase 1.** _Decided:_ 1.4 takes the two silent-wrong-number paths common in real warehouses — an aggregation time dimension that differs from the partition column, and `count_distinct` / `average` recomputed from base rows rather than rolled up. 1.7's corpus adds fan-trap and chasm-trap shapes. SCD type 2 (`natural` entities), timezones and multi-currency each need their own design and go to Phase 2.
-- **D12 · Reality check without a private project.** _Decided:_ no real dbt project is available to borrow, so milestone 1.2b runs the loader over MetricFlow's 154 public semantic-manifest fixtures (Apache-2.0) at a pinned commit and publishes a classified coverage report. Fetched, never vendored; nightly, not in PR gates.
+- **D12 · Reality check without a private project.** _Decided:_ no real dbt project is available to borrow, so milestone 1.2b takes a feature census of MetricFlow's public semantic-manifest fixtures (Apache-2.0) at a pinned commit and publishes `docs/conformance/manifest-coverage.md`. A census rather than a load: those fixtures use dbt's YAML shape, so loading them would measure format translation, not modelling coverage. The gaps it finds drive plan changes.
+- **D14 · Census findings (13 Sep 2026).** _Decided:_ `derived` metrics stay in Phase 2 despite being the most-used type in the corpus (63 uses) — they are arithmetic over metrics Phase 1 already computes correctly, the fixture corpus overstates their real frequency, and 1.4 is already the largest milestone. Metric-level filters (16 uses) come into Phase 1 as milestone 1.2c, because without them a manifest cannot state what a certified metric actually means. The census also found an interop bug of ours — declared values must be matched case-insensitively — now fixed.
 - **D13 · Suggestion ranking.** _Decided:_ refusal alternatives are ordered by the join graph now (own cuts first, then per entity) and capped at 25; 1.3 ranks them with the BM25 index built for discovery; embeddings stay deferred until telemetry shows refusals that are not repaired in one turn.
 - **D9 · Phase 1 subset.** _Decided:_ `derived` and `conversion` metrics, `percentile`, `median` and `sum_boolean` aggregations, sub-day granularities and `natural` entities are refused at load as "not supported in this version", never ignored.
 
@@ -223,3 +239,4 @@ publishes only from a green candidate. Maintainer briefings regenerated from the
 - 12 Sep 2026 — structure aligned with comparable projects (MCP Python SDK, MetricFlow, sqlglot, Iceberg-Python, Pydantic): 1.0 adds `AGENTS.md`, `Makefile`, pre-commit, zizmor, CodeQL; `GLOSSARY.md` → 1.1, `SECURITY-THREAT-MODEL.md` → 1.5, `local-data-warehouses/` → 1.7, `examples/` → 1.10, documentation site → Phase 2; issue forms and a code of conduct arrive with contribution stage 1.
 - 12 Sep 2026 — D7 (MetricFlow-shaped manifest), D8 (declared snapshot rollups), D9 (Phase 1 subset); 1.1, 1.2, 1.4 and scope updated.
 - 13 Sep 2026 — D10–D13 added; new milestone 1.2b; E11 and E12 added; 1.3, 1.4 and 1.7 updated; `docs/failure-modes.md` created.
+- 13 Sep 2026 — 1.2b run: D14 added (derived deferred, metric-level filters into Phase 1 as new milestone 1.2c); case-insensitive value matching fixed.
