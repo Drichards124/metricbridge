@@ -571,8 +571,15 @@ def compile_query(
         else:
             query, columns = _compile_simple(manifest, resolved, measure, dialect, parameters)
 
-    for name, direction in resolved.order_by:
-        query = query.order_by(exp.Ordered(this=exp.column(name), desc=direction == "desc"))
+    # The limit keeps whichever rows sort first, so the order is always total: the request's own
+    # order, then every group key, with NULL last on every engine.
+    requested = [name for name, _ in resolved.order_by]
+    keys = [c for c in columns if c != resolved.metric.name and not c.endswith("__null_key_rows")]
+    ordering = [*resolved.order_by, *((key, "asc") for key in keys if key not in requested)]
+    for name, direction in ordering:
+        query = query.order_by(
+            exp.Ordered(this=exp.column(name), desc=direction == "desc", nulls_first=False)
+        )
     query = query.limit(resolved.row_limit)
     return CompiledQuery(
         sql=query.sql(dialect=dialect),
