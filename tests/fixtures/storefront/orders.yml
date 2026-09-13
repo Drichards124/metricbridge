@@ -5,8 +5,10 @@ semantic_models:
     entities:
       - {name: order_line, type: primary, expr: order_line_id}
       - {name: customer, type: foreign, expr: customer_id}
+      - {name: product, type: foreign, expr: product_id}
     dimensions:
       - {name: order_date, type: time, time_granularity: day, is_partition: true}
+      - {name: created_at, type: time, time_granularity: day}
       - {name: channel, type: categorical}
     measures:
       - {name: revenue, agg: sum, expr: amount}
@@ -20,6 +22,7 @@ semantic_models:
     dimensions:
       - {name: region, type: categorical}
       - {name: segment, type: categorical}
+      - {name: created_at, type: time, time_granularity: day}
 
 metrics:
   - name: revenue
@@ -46,3 +49,11 @@ metrics:
     tier: certified
     owner: finance
     synonyms: [aov]
+
+  - name: gross_revenue
+    type: simple
+    measure: revenue
+    description: Order revenue before refunds. Superseded by revenue.
+    tier: deprecated
+    owner: finance
+    replaced_by: revenue

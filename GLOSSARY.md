@@ -51,7 +51,8 @@ tables of different grain without a unique key multiplies rows.
 ## Measures
 
 **Measure** — an aggregation over an expression: `sum`, `count`, `count_distinct`, `min`, `max` or
-`average`. `percentile`, `median` and `sum_boolean` are not supported in this version.
+`average`. `percentile`, `median` and `sum_boolean` are not supported in this version. A measure is
+**additive** unless it declares `additive: false`.
 
 **Additivity** — whether a measure may be summed along a dimension. Revenue is additive across
 time; units on hand are not, because summing daily snapshots counts the same stock once per day.
@@ -59,13 +60,19 @@ time; units on hand are not, because summing daily snapshots counts the same sto
 **Non-additive dimension** — declared on a snapshot measure to say how it rolls up across a time
 dimension: take the value at that dimension's `min` or `max` (the **window choice**) within each
 group, instead of summing. **Window groupings** name the entities the choice is made per, for
-example the last snapshot per product. A snapshot measure without this declaration is refused when
-a query would sum it across time.
+example the last snapshot per product. Declaring it requires `additive: false`. A measure marked
+`additive: false` *without* this declaration is refused when a query would sum it across time —
+only its base grain is offered.
 
 ## Metrics
 
 **Metric** — the governed name an agent asks for, with a description, an owner and a **tier**
-(`certified`, `experimental` or `deprecated`).
+(`certified`, `experimental` or `deprecated`). A deprecated metric still answers, with a notice
+naming its successor (`replaced_by`), and discovery hides it by default.
+
+**Qualified dimension name** — `entity__dimension`, such as `customer__region`, naming a cut
+reached through a join. A bare name is accepted while it points at exactly one cut; when two
+reachable tables share it, the request is refused with the qualified names offered.
 
 | Type | Definition |
 | --- | --- |

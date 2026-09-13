@@ -117,11 +117,26 @@ class NonAdditiveDimension(_Strict):
 
 
 class Measure(_Expressed):
+    """A measure is additive unless declared otherwise. A non-additive measure is a snapshot:
+    summing it across time counts the same stock once per period. Declaring
+    `non_additive_dimension` says how to roll it up; leaving it out means such a request is
+    refused rather than answered with a plausible wrong number."""
+
     name: str
     agg: Aggregation
     expr: str
     description: str = ""
-    non_additive_dimension: NonAdditiveDimension | None = None
+    additive: bool = True
+    non_additive_dimension: NonAdditiveDimension | None = Field(default=None, validate_default=True)
+
+    @field_validator("non_additive_dimension")
+    @classmethod
+    def rollup_needs_a_non_additive_measure(
+        cls, value: NonAdditiveDimension | None, info: ValidationInfo
+    ) -> NonAdditiveDimension | None:
+        if value is not None and info.data.get("additive") is not False:
+            raise ValueError("a measure declaring non_additive_dimension must set additive: false")
+        return value
 
     @field_validator("agg", mode="before")
     @classmethod
@@ -169,7 +184,18 @@ class Metric(_Strict):
     description: str
     tier: Tier = "experimental"
     owner: str | None = None
+    replaced_by: str | None = Field(default=None, validate_default=True)
     synonyms: list[str] = Field(default_factory=list)
+
+    @field_validator("replaced_by")
+    @classmethod
+    def only_deprecated_metrics_have_a_successor(
+        cls, value: str | None, info: ValidationInfo
+    ) -> str | None:
+        if value is not None and info.data.get("tier") != "deprecated":
+            raise ValueError("replaced_by is only allowed on a deprecated metric")
+        return value
+
     max_window_days: int | None = Field(default=None, gt=0)
     measure: str | None = Field(default=None, validate_default=True)
     numerator: str | None = Field(default=None, validate_default=True)

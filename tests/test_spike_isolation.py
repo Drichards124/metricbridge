@@ -1,4 +1,4 @@
-"""`spike/` validated the stack and is not the implementation: nothing under `src/` may import it."""
+"""`spike/` is not the implementation: nothing under `src/` may import it."""
 
 import ast
 from pathlib import Path

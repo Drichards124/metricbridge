@@ -1,0 +1,9 @@
+semantic_models:
+  - name: products
+    table: storefront.dim_products
+    description: One row per product.
+    entities:
+      - {name: product, type: primary, expr: product_id}
+    dimensions:
+      - {name: category, type: categorical}
+      - {name: region, type: categorical, description: Region the product is sourced from.}

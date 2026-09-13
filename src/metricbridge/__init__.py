@@ -1,4 +1,4 @@
-"""MetricBridge — a deterministic semantic firewall between autonomous agents and data warehouses."""
+"""MetricBridge — a deterministic semantic firewall between agents and data warehouses."""
 
 from importlib.metadata import version
 
