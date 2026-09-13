@@ -68,7 +68,7 @@ def test_no_tool_accepts_sql(tools):
 
 def test_discovery_returns_candidates_with_a_preview():
     async def conversation(session, _):
-        return await session.call_tool("discover_metrics", {"query": "units in stock"})
+        return await session.call_tool("discover_metrics", {"query": "inventory on hand"})
 
     payload = exchange(conversation).structured_content
     assert payload["ok"] is True

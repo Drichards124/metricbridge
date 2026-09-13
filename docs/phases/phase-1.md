@@ -159,8 +159,10 @@ the capability still gets the `no_match` catalog reply.
 ### 1.4 · Compiler
 Split into **1.4a** (core: simple metrics, N:1 LEFT joins, WHERE/HAVING placement, time bucketing,
 half-open date bounds, injected row limit, per-dialect rendering, bound parameters) and **1.4b**
-(ratio CTEs, cumulative windows with lookback widening, snapshot `window_choice`) — one PR each,
-both closing #6 (D16).
+(ratio CTEs and snapshot `window_choice`) and **1.4c** (cumulative windows with lookback widening)
+— one PR each, the last closing #6 (D16). Cumulative is split off because portable trailing windows
+need either a non-portable `RANGE INTERVAL` frame or an explicit period join, and that decision
+deserves its own review.
 Dialect-aware compilation through sqlglot typed expressions: half-open date intervals
 `[start, end + 1 day)`, dialect-correct time bucketing, an aggregation time dimension that may
 differ from the partition column (both bounded, D11), `count_distinct` and `average` recomputed from

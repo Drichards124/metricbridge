@@ -39,8 +39,8 @@ GOLDEN = [
     ("revenue per order", "average_order_value"),
     ("inventory", "inventory_on_hand"),
     ("inventory on hand", "inventory_on_hand"),
-    ("units in stock", "inventory_on_hand"),
-    ("how much stock do we have", "inventory_on_hand"),
+    ("stock at the end of the period", "inventory_on_hand"),
+    ("stock at the start of the period", "opening_stock"),
     ("stock at the end of the month", "inventory_on_hand"),
     ("units on hand by warehouse", "inventory_on_hand"),
     ("arr", "trailing_12m_revenue"),
@@ -57,6 +57,13 @@ def test_golden_phrasings_find_the_right_metric(index, phrasing, expected):
     found = [metric.name for metric, _ in index.search(phrasing, certified_only=False, limit=3)]
     assert found, f"{phrasing!r} found nothing"
     assert expected in found[:2], f"{phrasing!r} -> {found}"
+
+
+def test_a_phrasing_matching_several_metrics_equally_returns_them_all(index):
+    """ "Units in stock" is opening, closing, or the undeclared raw measure. Ranking cannot know
+    which, and inventing a winner is how an agent reports the wrong number confidently."""
+    found = [m.name for m, _ in index.search("units in stock", certified_only=False, limit=5)]
+    assert {"inventory_on_hand", "opening_stock", "stock_level"} <= set(found)
 
 
 def test_a_phrasing_sharing_no_word_with_the_catalog_finds_nothing(index):
