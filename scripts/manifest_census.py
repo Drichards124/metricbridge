@@ -57,7 +57,7 @@ STATUS: dict[str, tuple[str, str]] = {
     "measure:agg_time_dimension": (GAP, "aggregation time vs partition column — 1.4 (D11)"),
     "model:defaults_agg_time_dimension": (GAP, "same as above — 1.4 (D11)"),
     "model:primary_entity": (SUPPORTED, ""),
-    "metric:filter": (GAP, "metric-level filters are not modelled yet"),
+    "metric:filter": (GAP, "planned: milestone 1.2c (D14)"),
     "metric:offset_window": (GAP, "period-over-period offsets — Phase 2"),
     "metric:offset_to_grain": (GAP, "period-over-period offsets — Phase 2"),
     "metric:fill_nulls_with": (GAP, "gap filling — Phase 2"),
@@ -189,8 +189,10 @@ def report(census: Census) -> str:
         f"(Apache-2.0) at `{SOURCE_COMMIT[:12]}`, fetched and never vendored. Regenerate with",
         "`make census`.",
         "",
-        f"**{census.files} files · {census.semantic_models} semantic models · {census.metrics} metrics"
-        f" · {len(census.projects)} manifests**",
+        (
+            f"**{census.files} files · {census.semantic_models} semantic models"
+            f" · {census.metrics} metrics · {len(census.projects)} manifests**"
+        ),
         "",
         "| Feature | Uses | Status | Note |",
         "| --- | --- | --- | --- |",
@@ -239,7 +241,8 @@ def main() -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(report(census))
     print(
-        f"{census.files} files · {census.semantic_models} semantic models · {census.metrics} metrics -> {args.out}"
+        f"{census.files} files · {census.semantic_models} semantic models"
+        f" · {census.metrics} metrics -> {args.out}"
     )
     return 0
 

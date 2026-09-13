@@ -19,7 +19,7 @@ express what real semantic layers declare. Source: dbt-labs/metricflow fixture m
 | `entity:foreign` | 35 | supported |  |
 | `metric:offset_window` | 19 | gap | period-over-period offsets — Phase 2 |
 | `model:primary_entity` | 17 | supported |  |
-| `metric:filter` | 16 | gap | metric-level filters are not modelled yet |
+| `metric:filter` | 16 | gap | planned: milestone 1.2c (D14) |
 | `metric:cumulative` | 13 | supported |  |
 | `metric:ratio` | 11 | supported |  |
 | `dimension:is_partition` | 10 | supported |  |
@@ -44,7 +44,7 @@ express what real semantic layers declare. Source: dbt-labs/metricflow fixture m
 ## Gaps to answer
 
 - `measure:agg_time_dimension` — aggregation time vs partition column — 1.4 (D11)
-- `metric:filter` — metric-level filters are not modelled yet
+- `metric:filter` — planned: milestone 1.2c (D14)
 - `metric:offset_to_grain` — period-over-period offsets — Phase 2
 - `metric:offset_window` — period-over-period offsets — Phase 2
 - `model:defaults_agg_time_dimension` — same as above — 1.4 (D11)
