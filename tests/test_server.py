@@ -116,3 +116,44 @@ def test_an_unknown_metric_comes_back_as_data_not_an_error():
     assert refusal["code"] == "unknown_metric"
     assert "revenue" in refusal["valid_alternatives"]
     assert refusal["remediation"]
+
+
+def test_a_question_the_catalog_cannot_answer_asks_instead_of_guessing():
+    """ "How much did we sell" shares no word with any metric. Guessing here picks revenue or order
+    count by luck; the reply instead carries the catalog and tells the agent to ask the user."""
+
+    async def conversation(session, _):
+        return await session.call_tool("discover_metrics", {"query": "how much did we sell"})
+
+    payload = exchange(conversation).structured_content
+    assert payload["ok"] is False
+    (refusal,) = payload["errors"]
+    assert refusal["code"] == "no_match"
+    assert "Ask the user" in refusal["remediation"]
+    assert "revenue" in {entry["metric"] for entry in payload["catalog"]}
+
+
+def test_a_weak_match_is_flagged_rather_than_presented_as_an_answer():
+    async def conversation(session, _):
+        return await session.call_tool("discover_metrics", {"query": "customer"})
+
+    payload = exchange(conversation).structured_content
+    assert payload["ok"] is True
+    assert payload["confident"] is False
+    assert "Ask the user" in payload["clarify"]["reason"]
+    assert all(metric["confident"] is False for metric in payload["metrics"])
+
+
+def test_a_strong_match_is_returned_without_a_clarification_prompt():
+    async def conversation(session, _):
+        return await session.call_tool("discover_metrics", {"query": "revenue by region"})
+
+    payload = exchange(conversation).structured_content
+    assert payload["confident"] is True
+    assert payload["clarify"] is None
+    assert payload["metrics"][0]["metric"] == "revenue"
+
+
+def test_the_description_tells_the_agent_to_ask_rather_than_retry(tools):
+    described = {tool.name: tool.description or "" for tool in tools.tools}
+    assert "ASK THE USER" in described["discover_metrics"]

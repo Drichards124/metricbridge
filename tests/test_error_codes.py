@@ -4,6 +4,9 @@ import re
 from pathlib import Path
 
 from metricbridge.contract.rules import CODES
+from metricbridge.server import DISCOVERY_CODES
+
+ALL_CODES = CODES | DISCOVERY_CODES
 
 DOC = Path(__file__).parents[1] / "docs" / "error-codes.md"
 
@@ -13,8 +16,8 @@ def documented() -> set[str]:
 
 
 def test_every_code_is_documented():
-    assert CODES - documented() == set()
+    assert ALL_CODES - documented() == set()
 
 
 def test_no_code_is_documented_that_the_registry_cannot_raise():
-    assert documented() - CODES == set()
+    assert documented() - ALL_CODES == set()

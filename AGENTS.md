@@ -47,6 +47,10 @@ on each commit (install once with `uvx pre-commit install`).
   (`uv lock`), and a drifted lock fails the gate rather than silently resolving something new.
 - `uv sync` succeeds even when the declared package directory is missing, so an import test —
   not a clean sync — is what proves the package is wired.
+- When a file is restored within the same second it was edited (mutation testing, scripted
+  rollbacks), its `.pyc` can keep the *edited* bytecode: Python compares the source mtime recorded
+  in the cache, and an unchanged-looking timestamp reads as still valid. Clear `__pycache__` after
+  any scripted restore, or the next run silently tests the version you thought you reverted.
 
 ## Releases
 

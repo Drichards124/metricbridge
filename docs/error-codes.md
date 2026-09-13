@@ -24,6 +24,7 @@ found, not just the first.
 | Code | Raised when | Field |
 | --- | --- | --- |
 | `unknown_metric` | The metric is not in the manifest. Absent means unqueryable. | `metric` |
+| `no_match` | No governed metric matches the search. The reply carries the catalog: ask the user which they mean rather than guessing. | `query` |
 | `unsupported_metric_shape` | The metric combines measures from more than one table, which this version cannot compile. | `metric` |
 | `unknown_dimension` | The requested cut is not authorised for this metric. | `dimensions` |
 | `ambiguous_dimension` | A bare dimension name exists in more than one reachable table. | `dimensions` |

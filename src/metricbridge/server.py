@@ -35,7 +35,11 @@ other metric tool, and before assuming a metric or a cut exists.
 Give a natural-language description of what you want to measure. Returns candidate metrics with \
 their certified definition, owner and tier, plus a preview of the dimension names each one \
 authorises. The preview is names only: call get_metric_signature for the full contract before \
-querying, because a cut that looks obvious may not be authorised for that metric."""
+querying, because a cut that looks obvious may not be authorised for that metric.
+
+If the result is not confident, or nothing matched, ASK THE USER which metric they mean, using \
+the catalog returned in the reply. Do not rephrase and retry blindly, and do not pick a metric \
+that merely shares a word with the question: the wrong metric answers with a plausible number."""
 
 SIGNATURE_DESCRIPTION = """Get the exhaustive contract for one metric. ALWAYS call this after \
 discover_metrics and before query_metric.
@@ -45,12 +49,32 @@ mandatory date range and its maximum window, the filter operators, any filters t
 always applies, ordering rules and row limits. Everything the gateway enforces is listed here, so \
 a request built from this signature is not guessed."""
 
+# Raised by discovery rather than by a contract rule, so it lives here, not in the rule registry.
+DISCOVERY_CODES = frozenset({"no_match"})
+
 PREVIEW_LIMIT = 12
+CATALOG_LIMIT = 20
+# Below this, a hit shares a word with the catalog but does not answer the question. Asking beats
+# guessing: a similarity score cannot tell revenue from order count when someone says "sell".
+CONFIDENT_SCORE = 1.0
 
 
 def build_server(manifest: SemanticManifest) -> MCPServer:
     index = MetricIndex(manifest)
     server = MCPServer(name="metricbridge", instructions=INSTRUCTIONS)
+
+    def catalog(certified_only: bool) -> list[dict[str, Any]]:
+        """What is actually on offer — the answer to "then what can I ask for?"."""
+        return [
+            {
+                "metric": metric.name,
+                "description": metric.description,
+                "domain": metric.domain,
+                "tier": metric.tier,
+            }
+            for metric in sorted(manifest.metrics.values(), key=lambda m: m.name)
+            if not certified_only or metric.tier == "certified"
+        ][:CATALOG_LIMIT]
 
     @server.tool(name="discover_metrics", description=DISCOVER_DESCRIPTION, structured_output=True)
     def discover_metrics(
@@ -60,8 +84,39 @@ def build_server(manifest: SemanticManifest) -> MCPServer:
         limit: int = 5,
     ) -> dict[str, Any]:
         found = index.search(query, domain=domain, certified_only=certified_only, limit=limit)
+        if not found:
+            return {
+                "ok": False,
+                "manifest_version": manifest.version,
+                "errors": [
+                    {
+                        "code": "no_match",
+                        "message": f"no governed metric matches {query!r}.",
+                        "field": "query",
+                        "offending_value": query,
+                        "remediation": (
+                            "Ask the user which of the catalogued metrics they mean, or which "
+                            "words their team uses for it. Do not guess from a partial word match."
+                        ),
+                        "valid_alternatives": [e["metric"] for e in catalog(certified_only)],
+                    }
+                ],
+                "catalog": catalog(certified_only),
+                "domains": index.domains(),
+            }
+        confident = found[0][1] >= CONFIDENT_SCORE
         return {
             "ok": True,
+            "confident": confident,
+            "clarify": None
+            if confident
+            else {
+                "reason": (
+                    f"nothing matched {query!r} strongly; these merely share a word with it. "
+                    "Ask the user which they mean before querying."
+                ),
+                "catalog": catalog(certified_only),
+            },
             "manifest_version": manifest.version,
             "metrics": [
                 {
@@ -72,6 +127,7 @@ def build_server(manifest: SemanticManifest) -> MCPServer:
                     "owner": metric.owner,
                     "domain": metric.domain,
                     "score": score,
+                    "confident": score >= CONFIDENT_SCORE,
                     "dimensions_preview": [
                         entry["name"]
                         for entry in metric_signature(manifest, metric.name)["dimensions"]
