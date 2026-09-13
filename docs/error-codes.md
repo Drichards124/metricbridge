@@ -27,6 +27,8 @@ found, not just the first.
 | `unsupported_metric_shape` | The metric combines measures from more than one table, which this version cannot compile. | `metric` |
 | `unknown_dimension` | The requested cut is not authorised for this metric. | `dimensions` |
 | `ambiguous_dimension` | A bare dimension name exists in more than one reachable table. | `dimensions` |
+| `fixed_by_definition` | The metric's definition pins that field to one value, so it is not a cut of this metric. | `dimensions` / `filters` |
+| `contradictory_filter` | The filter can never match what the metric's definition allows; the answer would be an empty result that reads like a real zero. | `filters` |
 | `unsupported_time_grain` | The requested grain is not a grain this gateway serves. | `time_grain` |
 | `missing_partition_filter` | No `date_range` was supplied. An unbounded scan is refused. | `date_range` |
 | `invalid_date_range` | A date is not an ISO date, or the range ends before it starts. | `date_range` |

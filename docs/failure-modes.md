@@ -52,6 +52,9 @@ request is rejected, so the case cannot arise · **unguarded** — known, not ye
 | A constraint that only fixtures exercise | Real manifests differ from the ones we wrote | unguarded | property tests from 1.3 (D10); public manifests in 1.2b (D12) |
 | A certified definition that cannot be written down | "Revenue" really means revenue excluding refunds; without metric filters the manifest states something else | guarded | `tests/test_manifest_valid.py::test_metric_level_filters_are_part_of_the_definition` |
 | A metric filter naming a cut the metric cannot reach | The definition would silently not apply | guarded | `tests/test_manifest_invalid.py` (`metric-filter-on-unknown-field`) |
+| Filtering a field the definition already pins | "Store revenue" from a web-only metric returns 0, reading as "stores sold nothing" | guarded | `tests/test_validate.py::TestDefinitionConstraints` |
+| Asking for what a definition excludes | Refunds from a metric defined as "excluding refunds" returns 0, reading as "no refunds" | guarded | same — refused as `contradictory_filter`, pointing at a metric that can answer |
+| A contradiction behind `LIKE` or a range | Same empty-reads-as-zero failure, where disjointness cannot be proved | unguarded | deliberate: an unreliable refusal is its own failure. The constraint is disclosed in the signature |
 
 ## Execution and cost
 

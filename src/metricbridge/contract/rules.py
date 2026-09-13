@@ -40,6 +40,47 @@ def _metric_shape(context: Context) -> list[Refusal]:
     ]
 
 
+def _definition_constraints(context: Context) -> list[Refusal]:
+    """A field the definition pins is not a cut of this metric, and a filter that can never match
+    is a question this metric cannot answer — both are better refused than answered with zero."""
+    siblings = context.unfiltered_siblings
+    where_else = (
+        f"Ask {siblings[0]!r} instead, which leaves that field free."
+        if siblings
+        else "No metric over this measure leaves that field free; define one."
+    )
+    refusals = [
+        Refusal(
+            code="fixed_by_definition",
+            message=(
+                f"{declared.field!r} is fixed to {declared.value!r} by the definition of "
+                f"{context.metric.name!r}, so it is not a cut of this metric."
+            ),
+            field=where,
+            offending_value=requested,
+            remediation=where_else,
+            valid_alternatives=siblings,
+        )
+        for where, requested, declared in context.fixed_requests
+    ]
+    refusals += [
+        Refusal(
+            code="contradictory_filter",
+            message=(
+                f"{context.metric.name!r} is defined with {declared.field} {declared.operator} "
+                f"{declared.value!r}, so this filter can never match — the answer would be an "
+                f"empty result that reads like a real zero."
+            ),
+            field="filters",
+            offending_value=requested,
+            remediation=where_else,
+            valid_alternatives=siblings,
+        )
+        for requested, declared in context.contradictions
+    ]
+    return refusals
+
+
 def _dimensions(context: Context) -> list[Refusal]:
     refusals = [
         Refusal(
@@ -236,6 +277,12 @@ def _row_limit(context: Context) -> list[Refusal]:
 RULES: tuple[Rule, ...] = (
     Rule("metric_shape", ("unsupported_metric_shape",), ("type",), _metric_shape),
     Rule("dimensions", ("unknown_dimension", "ambiguous_dimension"), ("dimensions",), _dimensions),
+    Rule(
+        "definition_constraints",
+        ("fixed_by_definition", "contradictory_filter"),
+        ("dimensions", "filters"),
+        _definition_constraints,
+    ),
     Rule("time_grain", ("unsupported_time_grain",), ("time_grains",), _time_grain),
     Rule(
         "date_range",

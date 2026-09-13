@@ -82,7 +82,8 @@ def test_unknown_metric_has_no_signature(manifest):
 
 
 @pytest.mark.parametrize(
-    "metric", ["revenue", "average_order_value", "trailing_12m_revenue", "stock_level"]
+    "metric",
+    ["revenue", "average_order_value", "trailing_12m_revenue", "stock_level", "web_revenue"],
 )
 def test_every_rule_contributes_to_the_signature(manifest, metric):
     """A rule that enforces something the signature never mentions is a broken promise."""
@@ -135,3 +136,17 @@ def test_signature_discloses_what_a_metric_permanently_excludes(manifest):
     always = signature(manifest, "web_revenue")["filters"]["always_applied"]
     assert always == [{"field": "channel", "operator": "=", "value": "web"}]
     assert signature(manifest, "revenue")["filters"]["always_applied"] == []
+
+
+def test_a_pinned_field_is_not_advertised_as_a_cut(manifest):
+    """The signature must not offer what the definition has already decided."""
+    sig = signature(manifest, "web_revenue")
+    assert "channel" not in {d["name"] for d in sig["dimensions"]}
+    assert "channel" not in sig["filters"]["fields"]
+    # It is still disclosed as part of the definition, so the agent knows why.
+    assert sig["filters"]["always_applied"] == [
+        {"field": "channel", "operator": "=", "value": "web"}
+    ]
+    # A constrained-but-unpinned field stays available: grouping by it is meaningful.
+    enterprise = signature(manifest, "enterprise_revenue")
+    assert "customer__segment" in {d["name"] for d in enterprise["dimensions"]}
