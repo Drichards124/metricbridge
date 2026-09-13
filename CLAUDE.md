@@ -27,8 +27,13 @@ the path or output. Label anything unmeasured an _expectation_.
 
 ## Gates
 
-None exist yet; phase 1 milestone 1.0 creates them and records the exact commands here. Until
-then, every PR summary says plainly that no automated gate ran.
+The gates are the steps of the `gates` job in `.github/workflows/ci.yml` — the single source of
+truth, and a required check on `main`. Run each step locally before posting a pre-PR summary.
+Always pass `--locked`: a dependency change updates `uv.lock` in the same PR (`uv lock`), and a
+drifted lock fails the gate rather than silently resolving something new.
+
+`uv sync` succeeds even when the declared package directory is missing, so an import test —
+not a clean sync — is what proves the package is wired.
 
 ## Phases
 
