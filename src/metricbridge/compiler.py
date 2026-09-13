@@ -14,8 +14,9 @@ time bucket comes out as `DATE_TRUNC(col, MONTH)` on BigQuery and `dateTrunc(...
 instead of one spelling that is wrong on four engines.
 """
 
+from calendar import monthrange
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import date, timedelta
 
 from sqlglot import exp, parse_one
 
@@ -48,6 +49,12 @@ class CompiledQuery:
     parameters: dict[str, object]
     dialect: str
     columns: list[str]
+    output_window: tuple[date, date]  # what the answer covers, half-open
+    scan_window: tuple[date, date]  # what the scan reads, widened by any trailing window
+    expected_periods: list[date] = field(default_factory=list)
+    """Every anchor the range should produce. A period with no base rows never becomes an anchor,
+    so execution can report the missing ones rather than leaving a silent hole (see
+    docs/failure-modes.md, anchor dropping)."""
 
 
 @dataclass
@@ -59,6 +66,42 @@ class _Scan:
     business: exp.Column
     conditions: list[exp.Expression]
     joins: dict[str, str] = field(default_factory=dict)  # entity -> semantic model reached
+
+
+_MONTHS = {"month": 1, "quarter": 3, "year": 12}
+
+
+def _shift(moment: date, count: int, granularity: str) -> date:
+    """Move a date by whole periods. Calendar months are not 30 days, and a trailing-twelve-month
+    window that drifts is a wrong number nobody notices."""
+    if granularity == "day":
+        return moment + timedelta(days=count)
+    if granularity == "week":
+        return moment + timedelta(weeks=count)
+    months = count * _MONTHS[granularity]
+    total = moment.month - 1 + months
+    year, month = moment.year + total // 12, total % 12 + 1
+    return date(year, month, min(moment.day, monthrange(year, month)[1]))
+
+
+def _truncate(moment: date, granularity: str) -> date:
+    if granularity == "day":
+        return moment
+    if granularity == "week":
+        return moment - timedelta(days=moment.weekday())
+    if granularity == "month":
+        return moment.replace(day=1)
+    if granularity == "quarter":
+        return moment.replace(month=(moment.month - 1) // 3 * 3 + 1, day=1)
+    return moment.replace(month=1, day=1)
+
+
+def _periods_in(start: date, end_exclusive: date, granularity: str) -> list[date]:
+    periods, moment = [], _truncate(start, granularity)
+    while moment < end_exclusive:
+        periods.append(moment)
+        moment = _shift(moment, 1, granularity)
+    return periods
 
 
 def _qualify(expression: exp.Expression, table: str) -> exp.Expression:
@@ -142,6 +185,9 @@ def _build_scan(
     parameters: dict[str, object],
     *,
     extra_filters: tuple[ResolvedFilter, ...] = (),
+    start_name: str = "start_date",
+    start_value: date | None = None,
+    include_dimensions: bool = True,
 ) -> _Scan:
     base = resolved.base_model
     alias = base.name
@@ -152,10 +198,10 @@ def _build_scan(
     )
     business = exp.column(business_dimension.expr, table=alias)
 
-    parameters.setdefault("start_date", resolved.date_range.start_date)
+    parameters.setdefault(start_name, start_value or resolved.date_range.start_date)
     parameters.setdefault("end_date", resolved.date_range.end_date + timedelta(days=1))
     conditions = [
-        exp.GTE(this=business, expression=_placeholder("start_date")),
+        exp.GTE(this=business, expression=_placeholder(start_name)),
         exp.LT(this=business, expression=_placeholder("end_date")),
     ]
 
@@ -184,7 +230,7 @@ def _build_scan(
 
     joins: dict[str, str] = {}
     everything = (
-        *resolved.dimensions,
+        *(resolved.dimensions if include_dimensions else ()),
         *resolved.metric_filters,
         *extra_filters,
         *resolved.where_filters,
@@ -335,6 +381,113 @@ def _compile_snapshot(
     return query.with_("ranked", as_=ranked), columns
 
 
+def _interval(count: int, granularity: str) -> exp.Expression:
+    return exp.var(granularity.upper()), exp.Literal.number(count)
+
+
+def _compile_cumulative(
+    manifest: SemanticManifest,
+    resolved: Resolved,
+    measure: Measure,
+    dialect: str,
+    parameters: dict[str, object],
+) -> tuple[exp.Select, list[str], date]:
+    """Anchor periods joined to the rows their window covers.
+
+    A window frame would be shorter, but `RANGE BETWEEN INTERVAL` is not supported by BigQuery or
+    Snowflake even though sqlglot will happily emit it — plausible SQL that fails, or worse, means
+    something else. Joins, comparisons and date arithmetic are the same everywhere.
+    """
+    metric = resolved.metric
+    grain = resolved.time_grain
+    end_exclusive = resolved.date_range.end_date + timedelta(days=1)
+    raw_value = _qualify(parse_one(measure.expr, dialect=dialect), resolved.base_model.name)
+
+    if grain is None:
+        if metric.window:
+            window_start = _shift(end_exclusive, -metric.window.count, metric.window.granularity)
+        else:
+            window_start = _truncate(resolved.date_range.end_date, metric.grain_to_date)
+        scan = _build_scan(manifest, resolved, measure, parameters, start_value=window_start)
+        projections = [
+            exp.alias_(_column_of(resolved, d), d.requested) for d in resolved.dimensions
+        ]
+        projections.append(exp.alias_(_aggregate(measure, scan.alias, dialect), metric.name))
+        query = _apply(exp.select(*projections), manifest, scan)
+        if resolved.dimensions:
+            query = query.group_by(*[_column_of(resolved, d) for d in resolved.dimensions])
+        columns = [*(d.requested for d in resolved.dimensions), metric.name]
+        return query, columns, window_start
+
+    anchors = _periods_in(resolved.date_range.start_date, end_exclusive, grain)
+    if metric.window:
+        count, unit = metric.window.count, metric.window.granularity
+        scan_start = (
+            _shift(anchors[0], -(count - 1), unit)
+            if unit == grain
+            else _shift(_shift(anchors[0], -count, unit), 1, grain)
+        )
+    else:
+        scan_start = _truncate(anchors[0], metric.grain_to_date)
+
+    period_scan = _build_scan(manifest, resolved, measure, parameters, include_dimensions=False)
+    bucket = _bucket(resolved, period_scan.business)
+    periods = _apply(exp.select(exp.alias_(bucket, "period")).distinct(), manifest, period_scan)
+
+    measured_scan = _build_scan(
+        manifest, resolved, measure, parameters, start_name="scan_start", start_value=scan_start
+    )
+    measured_projections: list[exp.Expression] = [
+        exp.alias_(measured_scan.business, "occurred_at"),
+        *[exp.alias_(_column_of(resolved, d), d.requested) for d in resolved.dimensions],
+        exp.alias_(raw_value, "value"),
+    ]
+    measured = _apply(exp.select(*measured_projections), manifest, measured_scan)
+
+    period_column = exp.column("period", table="periods")
+    occurred = exp.column("occurred_at", table="measured")
+    if metric.window and metric.window.granularity == grain:
+        unit, amount = _interval(metric.window.count - 1, metric.window.granularity)
+        window_start = exp.DateSub(this=period_column, expression=amount, unit=unit)
+    elif metric.window:
+        unit, amount = _interval(metric.window.count, metric.window.granularity)
+        back = exp.DateSub(this=period_column, expression=amount, unit=unit)
+        step_unit, one = _interval(1, grain)
+        window_start = exp.DateAdd(this=back, expression=one, unit=step_unit)
+    else:
+        window_start = period_column
+    step_unit, one = _interval(1, grain)
+    next_period = exp.DateAdd(this=period_column, expression=one, unit=step_unit)
+
+    outer: list[exp.Expression] = [exp.alias_(period_column, "period")]
+    groups: list[exp.Expression] = [period_column]
+    columns = ["period"]
+    for dimension in resolved.dimensions:
+        carried = exp.column(dimension.requested, table="measured")
+        outer.append(exp.alias_(carried, dimension.requested))
+        groups.append(carried)
+        columns.append(dimension.requested)
+    outer.append(
+        exp.alias_(
+            _AGGREGATES[measure.agg](this=exp.column("value", table="measured")), metric.name
+        )
+    )
+    columns.append(metric.name)
+
+    condition = exp.and_(
+        exp.GTE(this=occurred, expression=window_start),
+        exp.LT(this=occurred, expression=next_period),
+    )
+    query = (
+        exp.select(*outer)
+        .from_("periods")
+        .join(exp.Join(this=exp.to_table("measured"), on=condition))
+        .group_by(*groups)
+    )
+    query = query.with_("periods", as_=periods).with_("measured", as_=measured)
+    return query, columns, scan_start
+
+
 def _compile_ratio(
     manifest: SemanticManifest, resolved: Resolved, dialect: str, parameters: dict[str, object]
 ) -> tuple[exp.Select, list[str]]:
@@ -403,11 +556,17 @@ def compile_query(
         raise ValueError(f"unsupported dialect {dialect!r}; expected one of {', '.join(DIALECTS)}")
 
     parameters: dict[str, object] = {}
+    end_exclusive = resolved.date_range.end_date + timedelta(days=1)
+    scan_start = resolved.date_range.start_date
     if resolved.metric.type == "ratio":
         query, columns = _compile_ratio(manifest, resolved, dialect, parameters)
     else:
         measure = metric_sources(manifest.semantic_models, manifest.metrics, resolved.metric)[0][0]
-        if measure.non_additive_dimension is not None:
+        if resolved.metric.type == "cumulative":
+            query, columns, scan_start = _compile_cumulative(
+                manifest, resolved, measure, dialect, parameters
+            )
+        elif measure.non_additive_dimension is not None:
             query, columns = _compile_snapshot(manifest, resolved, measure, dialect, parameters)
         else:
             query, columns = _compile_simple(manifest, resolved, measure, dialect, parameters)
@@ -416,5 +575,15 @@ def compile_query(
         query = query.order_by(exp.Ordered(this=exp.column(name), desc=direction == "desc"))
     query = query.limit(resolved.row_limit)
     return CompiledQuery(
-        sql=query.sql(dialect=dialect), parameters=parameters, dialect=dialect, columns=columns
+        sql=query.sql(dialect=dialect),
+        parameters=parameters,
+        dialect=dialect,
+        columns=columns,
+        output_window=(resolved.date_range.start_date, end_exclusive),
+        scan_window=(scan_start, end_exclusive),
+        expected_periods=(
+            _periods_in(resolved.date_range.start_date, end_exclusive, resolved.time_grain)
+            if resolved.time_grain
+            else []
+        ),
     )
