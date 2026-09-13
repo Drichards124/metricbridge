@@ -12,8 +12,8 @@ direction, approves plans and merges every change.
 - **Changes** land only through pull requests into `main`. Each carries a written summary —
   impact, problem, approach, scenarios, evidence — that the maintainer approves before merge.
 - **Design changes** produce a new versioned design document; earlier versions stay readable.
-- **Status** is recorded in [`docs/architecture-detailed.md`](docs/architecture-detailed.md) and
-  refreshed from the code at every phase close.
+- **Progress** is tracked in each phase's GitHub milestone, its issues, and
+  [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Commitments
 
