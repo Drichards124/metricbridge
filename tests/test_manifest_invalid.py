@@ -239,6 +239,26 @@ CASES = [
     pytest.param(
         {
             "m.yml": edit(
+                "description: Revenue.}",
+                'description: Revenue., filters: [{field: colour, operator: "=", value: red}]}',
+            )
+        },
+        [("m.yml", "metrics[0].filters[0].field", "not an authorised cut")],
+        id="metric-filter-on-unknown-field",
+    ),
+    pytest.param(
+        {
+            "m.yml": edit(
+                "description: Revenue.}",
+                'description: Revenue., filters: [{field: channel, operator: "~=", value: web}]}',
+            )
+        },
+        [("m.yml", "metrics[0].filters[0].operator", "unknown operator")],
+        id="metric-filter-with-unknown-operator",
+    ),
+    pytest.param(
+        {
+            "m.yml": edit(
                 "{name: revenue, agg: sum, expr: amount}",
                 "{name: revenue, agg: sum, expr: amount, additive: false, non_additive_dimension: {name: channel, window_choice: max}}",
             )

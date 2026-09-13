@@ -70,6 +70,12 @@ only its base grain is offered.
 (`certified`, `experimental` or `deprecated`). A deprecated metric still answers, with a notice
 naming its successor (`replaced_by`), and discovery hides it by default.
 
+**Metric filter** — part of a metric's definition rather than of a request: `web_revenue` means
+revenue *where channel is web*. Declared structurally (`field`, `operator`, `value`), never as SQL,
+so the compiler builds the syntax and the driver carries the value. It applies to every query of
+that metric, is checked when the manifest loads, and is disclosed in the signature so an agent can
+see what a metric permanently excludes.
+
 **Qualified dimension name** — `entity__dimension`, such as `customer__region`, naming a cut
 reached through a join. A bare name is accepted while it points at exactly one cut; when two
 reachable tables share it, the request is refused with the qualified names offered.

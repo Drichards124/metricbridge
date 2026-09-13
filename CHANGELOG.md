@@ -18,6 +18,8 @@ All notable changes to MetricBridge are documented here. The format follows
   ordering and row limits.
 - Measures take `additive: true|false`; a declared roll-up (`non_additive_dimension`) requires
   `additive: false`. Metrics take `replaced_by` for deprecations.
+- Metrics can declare filters that are part of their definition and apply to every query, listed in
+  the signature as `filters.always_applied`.
 - Manifests are validated when loaded. Every problem is reported at once with its file and field
   path, including unknown keys, many-to-many joins, missing partition dimensions and features not
   supported in this version.

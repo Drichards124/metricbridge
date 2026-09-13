@@ -274,3 +274,88 @@ def test_alternatives_are_capped_on_a_wide_table(tmp_path):
         validate(wide, QueryRequest(metric="total", date_range=Q3, dimensions=["nothing_like_it"]))
     (refusal,) = refused.value.refusals
     assert len(refusal.valid_alternatives) == 25
+
+
+class TestMetricFilters:
+    def test_a_metric_carries_its_own_filter(self, manifest):
+        resolved = validate(manifest, request(metric="web_revenue"))
+        (applied,) = resolved.metric_filters
+        assert (applied.field, applied.operator, applied.value) == ("channel", "=", "web")
+        assert applied.dimension.model == "orders"
+        assert applied.dimension.column == "channel"
+        assert resolved.where_filters == []
+
+    def test_a_metric_filter_can_reach_through_a_join(self, manifest):
+        resolved = validate(manifest, request(metric="enterprise_revenue"))
+        (applied,) = resolved.metric_filters
+        assert applied.dimension.model == "customers"
+        assert applied.dimension.entity == "customer"
+
+    def test_metric_and_request_filters_stay_distinguishable(self, manifest):
+        resolved = validate(
+            manifest,
+            request(
+                metric="web_revenue",
+                filters=[{"field": "customer__region", "operator": "=", "value": "emea"}],
+            ),
+        )
+        assert [f.field for f in resolved.metric_filters] == ["channel"]
+        assert [f.field for f in resolved.where_filters] == ["customer__region"]
+
+
+class TestDefinitionConstraints:
+    """A definition that pins a field makes that field not a cut of the metric at all."""
+
+    def test_grouping_by_a_pinned_field_is_refused(self, manifest):
+        (refusal,) = refusals(manifest, metric="web_revenue", dimensions=["channel"])
+        assert refusal.code == "fixed_by_definition"
+        assert refusal.field == "dimensions"
+        assert "revenue" in refusal.valid_alternatives
+        assert "web" in refusal.message
+
+    def test_filtering_a_pinned_field_is_refused(self, manifest):
+        (refusal,) = refusals(
+            manifest,
+            metric="web_revenue",
+            filters=[{"field": "channel", "operator": "=", "value": "store"}],
+        )
+        assert refusal.code == "fixed_by_definition"
+        assert refusal.field == "filters"
+        assert refusal.remediation.startswith("Ask 'revenue'")
+
+    def test_a_filter_that_can_never_match_is_refused(self, manifest):
+        """The refunds shape: asking a metric for what its definition excludes."""
+        (refusal,) = refusals(
+            manifest,
+            metric="enterprise_revenue",
+            filters=[{"field": "customer__segment", "operator": "=", "value": "smb"}],
+        )
+        assert refusal.code == "contradictory_filter"
+        assert "empty result" in refusal.message
+        assert "revenue" in refusal.valid_alternatives
+
+    def test_narrowing_within_a_constraint_is_allowed(self, manifest):
+        resolved = validate(
+            manifest,
+            request(
+                metric="enterprise_revenue",
+                filters=[{"field": "customer__segment", "operator": "=", "value": "enterprise"}],
+            ),
+        )
+        assert [f.field for f in resolved.where_filters] == ["customer__segment"]
+
+    def test_grouping_by_a_constrained_but_unpinned_field_is_allowed(self, manifest):
+        resolved = validate(
+            manifest, request(metric="enterprise_revenue", dimensions=["customer__segment"])
+        )
+        assert [d.model for d in resolved.dimensions] == ["customers"]
+
+    def test_an_unrelated_field_is_unaffected(self, manifest):
+        resolved = validate(
+            manifest,
+            request(
+                metric="web_revenue",
+                filters=[{"field": "customer__region", "operator": "=", "value": "emea"}],
+            ),
+        )
+        assert [f.field for f in resolved.where_filters] == ["customer__region"]

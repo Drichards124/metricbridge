@@ -57,3 +57,21 @@ metrics:
     tier: deprecated
     owner: finance
     replaced_by: revenue
+
+  - name: web_revenue
+    type: simple
+    measure: revenue
+    description: Recognised revenue from the web channel only.
+    tier: certified
+    owner: finance
+    filters:
+      - {field: channel, operator: "=", value: web}
+
+  - name: enterprise_revenue
+    type: simple
+    measure: revenue
+    description: Recognised revenue from enterprise and strategic customers.
+    tier: experimental
+    owner: finance
+    filters:
+      - {field: customer__segment, operator: IN, value: [enterprise, strategic]}

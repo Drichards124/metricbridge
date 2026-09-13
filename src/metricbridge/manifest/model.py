@@ -23,6 +23,8 @@ GRANULARITIES = ("day", "week", "month", "quarter", "year")
 AGGREGATIONS = ("sum", "count", "count_distinct", "min", "max", "average")
 ENTITY_TYPES = ("primary", "unique", "foreign")
 METRIC_TYPES = ("simple", "ratio", "cumulative")
+# The filter vocabulary, shared by manifest-declared filters and agent-supplied ones.
+OPERATORS = ("=", "!=", "<", "<=", ">", ">=", "in", "not in", "like", "is null", "is not null")
 
 # Valid in MetricFlow, deferred here. Named so the refusal says "not yet", not "never heard of it".
 DEFERRED_GRANULARITIES = ("nanosecond", "microsecond", "millisecond", "second", "minute", "hour")
@@ -188,6 +190,23 @@ _REQUIRED_PARAMS = {
 }
 
 
+class MetricFilter(_Strict):
+    """Part of the definition, not of the request: `revenue` may mean amount excluding refunds.
+
+    Declared structurally rather than as SQL, so the compiler builds the syntax, the driver carries
+    the value, and the signature can show an agent what a metric permanently excludes.
+    """
+
+    field: str
+    operator: str
+    value: object = None
+
+    @field_validator("operator", mode="before")
+    @classmethod
+    def supported_operator(cls, value: object) -> object:
+        return _choice(value, OPERATORS, (), "operator")
+
+
 class Metric(_Strict):
     """A governed metric. Absent from the manifest means unqueryable: the catalog is a whitelist."""
 
@@ -198,6 +217,7 @@ class Metric(_Strict):
     owner: str | None = None
     replaced_by: str | None = Field(default=None, validate_default=True)
     synonyms: list[str] = Field(default_factory=list)
+    filters: list[MetricFilter] = Field(default_factory=list)
 
     @field_validator("replaced_by")
     @classmethod

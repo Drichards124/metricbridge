@@ -10,14 +10,20 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from ..manifest import (
+    OPERATORS,
+    CatalogEntry,
     Dimension,
     Measure,
     Metric,
+    MetricFilter,
     NonAdditiveDimension,
     SemanticManifest,
     SemanticModel,
+    dimension_catalog,
+    metric_sources,
 )
-from .request import OPERATORS, QueryRequest
+from ..manifest import resolve as resolve_in_catalog
+from .request import QueryRequest
 
 GRAIN_ORDER = ("day", "week", "month", "quarter", "year")
 
@@ -60,6 +66,7 @@ class Resolved:
     time_grain: str | None
     row_limit: int
     snapshot: NonAdditiveDimension | None
+    metric_filters: list[ResolvedFilter]  # declared on the metric, applied to every query
     notices: list[str]
 
 
@@ -73,12 +80,17 @@ class Context:
     base_model: SemanticModel
     measures: tuple[Measure, ...]
     partition: Dimension | None
-    catalog: dict[str, ResolvedDimension]  # qualified name -> dimension
+    catalog: dict[str, CatalogEntry]  # qualified name -> reachable cut
     dimensions: list[ResolvedDimension] = field(default_factory=list)
     unknown_dimensions: list[str] = field(default_factory=list)
     ambiguous_dimensions: list[tuple[str, list[str]]] = field(default_factory=list)
     where_filters: list[ResolvedFilter] = field(default_factory=list)
     having_filters: list[ResolvedFilter] = field(default_factory=list)
+    metric_filters: list[ResolvedFilter] = field(default_factory=list)
+    pinned: dict[str, MetricFilter] = field(default_factory=dict)
+    constrained: dict[str, MetricFilter] = field(default_factory=dict)
+    fixed_requests: list[tuple[str, str, MetricFilter]] = field(default_factory=list)
+    contradictions: list[tuple[str, MetricFilter]] = field(default_factory=list)
     unknown_filter_fields: list[str] = field(default_factory=list)
     bad_operators: list[str] = field(default_factory=list)
     date_range: DateRange | None = None
@@ -111,16 +123,33 @@ class Context:
         return list(GRAIN_ORDER[GRAIN_ORDER.index(self.base_grain) :])
 
     @property
+    def unfiltered_siblings(self) -> list[str]:
+        """Metrics over the same measures that leave every field free — where to send an agent
+        whose question the definition of this metric excludes."""
+        mine = {m.name for m in self.measures}
+        return sorted(
+            name
+            for name, other in self.manifest.metrics.items()
+            if name != self.metric.name
+            and not other.filters
+            and other.tier != "deprecated"
+            and other.measure in mine
+        )
+
+    @property
     def dimension_names(self) -> list[str]:
         """Ordered as the model reads: this table's own cuts, then each join's, by entity.
+
+        A field the definition pins to one value is not a cut of this metric at all: grouping by it
+        yields one row and filtering it can only be redundant or empty. Advertising it would be the
+        signature contradicting the definition.
 
         A flat alphabetical list buries the cut the agent most likely wants among cuts it has to
         traverse a join to reach.
         """
-        own = sorted(name for name, d in self.catalog.items() if d.entity is None)
-        joined = sorted(
-            (d.entity, name) for name, d in self.catalog.items() if d.entity is not None
-        )
+        free = {name: d for name, d in self.catalog.items() if name not in self.pinned}
+        own = sorted(name for name, d in free.items() if d.entity is None)
+        joined = sorted((d.entity, name) for name, d in free.items() if d.entity is not None)
         return own + [name for _, name in joined]
 
     @property
@@ -135,79 +164,27 @@ class Context:
         return sorted(fields)
 
 
-def measures_of(
-    manifest: SemanticManifest, metric: Metric
-) -> tuple[tuple[Measure, ...], tuple[SemanticModel, ...]]:
-    """The measures a metric reads, and the semantic models that own them."""
-    names: list[str] = []
-    if metric.type == "ratio":
-        for leg in (metric.numerator, metric.denominator):
-            names.append(manifest.metrics[leg].measure)
-    else:
-        names.append(metric.measure)
-    measures: list[Measure] = []
-    models: list[SemanticModel] = []
-    for name in names:
-        for model in manifest.semantic_models.values():
-            found = next((m for m in model.measures if m.name == name), None)
-            if found is not None:
-                measures.append(found)
-                models.append(model)
-                break
-    return tuple(measures), tuple(models)
-
-
-def _catalog(manifest: SemanticManifest, base: SemanticModel) -> dict[str, ResolvedDimension]:
-    catalog: dict[str, ResolvedDimension] = {}
-    for dimension in base.dimensions:
-        catalog[dimension.name] = ResolvedDimension(
-            requested=dimension.name,
-            name=dimension.name,
-            model=base.name,
-            column=dimension.expr,
-            entity=None,
-            kind=dimension.type,
-        )
-    for join in manifest.joins:
-        if join.from_model != base.name:
-            continue
-        target = manifest.semantic_models[join.to_model]
-        for dimension in target.dimensions:
-            qualified = f"{join.entity}__{dimension.name}"
-            catalog[qualified] = ResolvedDimension(
-                requested=qualified,
-                name=qualified,
-                model=target.name,
-                column=dimension.expr,
-                entity=join.entity,
-                kind=dimension.type,
-            )
-    return catalog
-
-
-def _resolve_name(context: Context, requested: str) -> ResolvedDimension | list[str] | None:
-    """The dimension, or the qualified alternatives when a bare name is ambiguous, or None."""
-    found = context.catalog.get(requested)
-    if found is not None:
-        return found
-    candidates = [d for name, d in context.catalog.items() if name.endswith(f"__{requested}")]
-    if not candidates:
-        return None
-    if len(candidates) > 1:
-        return sorted(d.name for d in candidates)
-    resolved = candidates[0]
+def _as_dimension(entry: CatalogEntry, requested: str) -> ResolvedDimension:
     return ResolvedDimension(
         requested=requested,
-        name=resolved.name,
-        model=resolved.model,
-        column=resolved.column,
-        entity=resolved.entity,
-        kind=resolved.kind,
+        name=entry.name,
+        model=entry.model,
+        column=entry.column,
+        entity=entry.entity,
+        kind=entry.kind,
     )
 
 
+def _resolve_name(context: "Context", requested: str) -> ResolvedDimension | list[str] | None:
+    """The dimension, or the qualified alternatives when a bare name is ambiguous, or None."""
+    outcome = resolve_in_catalog(context.catalog, requested)
+    if outcome is None or isinstance(outcome, list):
+        return outcome
+    return _as_dimension(outcome, requested)
+
+
 def build_context(manifest: SemanticManifest, request: QueryRequest, metric: Metric) -> Context:
-    measures, models = measures_of(manifest, metric)
+    measures, models = metric_sources(manifest.semantic_models, manifest.metrics, metric)
     base = models[0]
     context = Context(
         manifest=manifest,
@@ -216,9 +193,26 @@ def build_context(manifest: SemanticManifest, request: QueryRequest, metric: Met
         base_model=base,
         measures=measures,
         partition=base.partition,
-        catalog=_catalog(manifest, base),
+        catalog=dimension_catalog(manifest.semantic_models, manifest.joins, base),
         mixed_models=len({m.name for m in models}) > 1,
     )
+
+    for declared in metric.filters:  # part of the definition; validated when the manifest loaded
+        entry = resolve_in_catalog(context.catalog, declared.field)
+        if isinstance(entry, CatalogEntry):
+            target = context.pinned if declared.operator == "=" else context.constrained
+            target[entry.name] = declared
+
+        outcome = resolve_in_catalog(context.catalog, declared.field)
+        if isinstance(outcome, CatalogEntry):
+            context.metric_filters.append(
+                ResolvedFilter(
+                    declared.field,
+                    declared.operator,
+                    declared.value,
+                    _as_dimension(outcome, declared.field),
+                )
+            )
 
     for requested in request.dimensions:
         outcome = _resolve_name(context, requested)
@@ -226,6 +220,8 @@ def build_context(manifest: SemanticManifest, request: QueryRequest, metric: Met
             context.unknown_dimensions.append(requested)
         elif isinstance(outcome, list):
             context.ambiguous_dimensions.append((requested, outcome))
+        elif outcome.name in context.pinned:
+            context.fixed_requests.append(("dimensions", requested, context.pinned[outcome.name]))
         else:
             context.dimensions.append(outcome)
 
@@ -241,6 +237,12 @@ def build_context(manifest: SemanticManifest, request: QueryRequest, metric: Met
         outcome = _resolve_name(context, filter_.field)
         if outcome is None or isinstance(outcome, list):
             context.unknown_filter_fields.append(filter_.field)
+        elif outcome.name in context.pinned:
+            context.fixed_requests.append(("filters", filter_.field, context.pinned[outcome.name]))
+        elif outcome.name in context.constrained and disjoint(
+            context.constrained[outcome.name], filter_.operator.lower(), filter_.value
+        ):
+            context.contradictions.append((filter_.field, context.constrained[outcome.name]))
         else:
             context.where_filters.append(
                 ResolvedFilter(filter_.field, filter_.operator.lower(), filter_.value, outcome)
@@ -265,6 +267,31 @@ def build_context(manifest: SemanticManifest, request: QueryRequest, metric: Met
         successor = f"; use {metric.replaced_by!r} instead" if metric.replaced_by else ""
         context.notices.append(f"metric {metric.name!r} is deprecated{successor}")
     return context
+
+
+def _as_set(value: object) -> set:
+    return set(value) if isinstance(value, list) else {value}
+
+
+def disjoint(declared: MetricFilter, operator: str, value: object) -> bool:
+    """Can these two filters never both hold? Decided only for literal set operators.
+
+    `LIKE` and range comparisons are left alone on purpose: a refusal resting on a shaky proof is
+    its own failure mode.
+    """
+    literal = ("=", "!=", "in", "not in")
+    if declared.operator not in literal or operator not in literal:
+        return False
+    allowed, requested = _as_set(declared.value), _as_set(value)
+    declared_positive = declared.operator in ("=", "in")
+    requested_positive = operator in ("=", "in")
+    if declared_positive and requested_positive:
+        return not (allowed & requested)
+    if declared_positive and not requested_positive:
+        return allowed <= requested  # the request excludes everything the definition allows
+    if not declared_positive and requested_positive:
+        return requested <= allowed  # the definition excludes everything the request asks for
+    return False  # two exclusions always share something
 
 
 def close_matches(value: str, options: list[str], limit: int = 25) -> list[str]:

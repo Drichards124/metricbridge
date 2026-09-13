@@ -8,7 +8,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-OPERATORS = ("=", "!=", "<", "<=", ">", ">=", "in", "not in", "like", "is null", "is not null")
 DEFAULT_ROW_LIMIT = 100
 MAX_ROW_LIMIT = 1000
 
