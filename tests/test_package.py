@@ -1,4 +1,4 @@
-"""The package installs and imports under its declared name — the smallest proof the build is wired."""
+"""The package installs and imports under its declared name — proof the build is wired."""
 
 from importlib.metadata import version
 

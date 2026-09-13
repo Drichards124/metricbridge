@@ -11,10 +11,14 @@ semantic_models:
       - name: units_on_hand
         agg: sum
         expr: units
+        additive: false
         non_additive_dimension:
           name: snapshot_date
           window_choice: max
           window_groupings: [product]
+
+      # Deliberately undeclared: nothing says how it rolls up, so summing it across time is refused.
+      - {name: units_on_hand_raw, agg: sum, expr: units, additive: false}
 
 metrics:
   - name: inventory_on_hand
@@ -22,4 +26,11 @@ metrics:
     measure: units_on_hand
     description: Units in stock at the end of the period.
     tier: certified
+    owner: operations
+
+  - name: stock_level
+    type: simple
+    measure: units_on_hand_raw
+    description: Units in stock, with no declared roll-up across time.
+    tier: experimental
     owner: operations

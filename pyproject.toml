@@ -26,5 +26,13 @@ packages = ["src/metricbridge"]
 line-length = 100
 extend-exclude = ["spike"]
 
+[tool.ruff.lint]
+# E501 keeps error messages and docstrings wrapped: long lines hide what a diff changed.
+extend-select = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Inline YAML fixtures read worse split across lines than run long.
+"tests/test_manifest_invalid.py" = ["E501"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

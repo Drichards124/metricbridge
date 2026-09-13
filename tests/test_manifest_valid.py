@@ -13,6 +13,7 @@ def test_loads_every_file_in_a_directory():
     assert set(manifest.semantic_models) == {
         "orders",
         "customers",
+        "products",
         "inventory_snapshots",
         "subscription_revenue",
     }
@@ -20,15 +21,17 @@ def test_loads_every_file_in_a_directory():
         "revenue",
         "order_count",
         "average_order_value",
+        "gross_revenue",
         "inventory_on_hand",
+        "stock_level",
         "trailing_12m_revenue",
         "revenue_month_to_date",
     }
 
 
 def test_loads_a_single_file():
-    manifest = load_manifest(STOREFRONT / "inventory.yml")
-    assert set(manifest.metrics) == {"inventory_on_hand"}
+    manifest = load_manifest(STOREFRONT / "products.yml")
+    assert set(manifest.semantic_models) == {"products"}
 
 
 def test_joins_are_derived_from_entity_types():
@@ -36,6 +39,8 @@ def test_joins_are_derived_from_entity_types():
     joins = {(j.from_model, j.to_model, j.entity, j.cardinality) for j in manifest.joins}
     assert joins == {
         ("orders", "customers", "customer", "many_to_one"),
+        ("orders", "products", "product", "many_to_one"),
+        ("inventory_snapshots", "products", "product", "many_to_one"),
         ("subscription_revenue", "customers", "customer", "many_to_one"),
     }
 
@@ -50,11 +55,16 @@ def test_partition_dimension_and_defaults():
 
 def test_snapshot_measure_declares_its_rollup():
     model = load_manifest(STOREFRONT).semantic_models["inventory_snapshots"]
-    units = model.measures[0]
+    units = next(m for m in model.measures if m.name == "units_on_hand")
+    assert units.additive is False
     assert units.non_additive_dimension is not None
     assert units.non_additive_dimension.name == "snapshot_date"
     assert units.non_additive_dimension.window_choice == "max"
     assert units.non_additive_dimension.window_groupings == ["product"]
+
+    undeclared = next(m for m in model.measures if m.name == "units_on_hand_raw")
+    assert undeclared.additive is False
+    assert undeclared.non_additive_dimension is None
 
 
 def test_metric_types_carry_their_parameters():
@@ -66,7 +76,8 @@ def test_metric_types_carry_their_parameters():
     trailing = metrics["trailing_12m_revenue"]
     assert (trailing.window.count, trailing.window.granularity) == (12, "month")
     assert metrics["revenue_month_to_date"].grain_to_date == "month"
-    assert metrics["order_count"].tier == "certified"
+    assert metrics["gross_revenue"].tier == "deprecated"
+    assert metrics["gross_revenue"].replaced_by == "revenue"
 
 
 def test_version_is_deterministic_and_tracks_content_not_formatting(tmp_path):

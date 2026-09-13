@@ -240,7 +240,7 @@ CASES = [
         {
             "m.yml": edit(
                 "{name: revenue, agg: sum, expr: amount}",
-                "{name: revenue, agg: sum, expr: amount, non_additive_dimension: {name: channel, window_choice: max}}",
+                "{name: revenue, agg: sum, expr: amount, additive: false, non_additive_dimension: {name: channel, window_choice: max}}",
             )
         },
         [
@@ -256,7 +256,7 @@ CASES = [
         {
             "m.yml": edit(
                 "{name: revenue, agg: sum, expr: amount}",
-                "{name: revenue, agg: sum, expr: amount, non_additive_dimension: {name: order_date, window_choice: max, window_groupings: [store]}}",
+                "{name: revenue, agg: sum, expr: amount, additive: false, non_additive_dimension: {name: order_date, window_choice: max, window_groupings: [store]}}",
             )
         },
         [
@@ -267,6 +267,22 @@ CASES = [
             )
         ],
         id="non-additive-grouping-unknown-entity",
+    ),
+    pytest.param(
+        {
+            "m.yml": edit(
+                "{name: revenue, agg: sum, expr: amount}",
+                "{name: revenue, agg: sum, expr: amount, non_additive_dimension: {name: order_date, window_choice: max}}",
+            )
+        },
+        [
+            (
+                "m.yml",
+                "semantic_models[0].measures[0].non_additive_dimension",
+                "must set additive: false",
+            )
+        ],
+        id="rollup-declared-without-additive-false",
     ),
     pytest.param(
         {

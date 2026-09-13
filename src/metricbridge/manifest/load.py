@@ -146,7 +146,8 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                     ManifestIssue(
                         file,
                         f"{at}.name",
-                        f"semantic model {model.name!r} is defined more than once (first in {model_seen[model.name]})",
+                        f"semantic model {model.name!r} is defined more than once "
+                        f"(first in {model_seen[model.name]})",
                     )
                 )
             model_seen.setdefault(model.name, file)
@@ -159,7 +160,9 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                             ManifestIssue(
                                 file,
                                 f"{at}.{kind}[{j}].name",
-                                f"{kind[:-1] if kind == 'dimensions' else 'entity'} {element.name!r} is defined more than once in semantic model {model.name!r}",
+                                f"{kind[:-1] if kind == 'dimensions' else 'entity'} "
+                                f"{element.name!r} is defined more than once in "
+                                f"semantic model {model.name!r}",
                             )
                         )
                     names.add(element.name)
@@ -190,7 +193,8 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                     ManifestIssue(
                         file,
                         f"{at}.dimensions",
-                        "no partition dimension: a model with measures needs exactly one time dimension with is_partition: true",
+                        "no partition dimension: a model with measures needs exactly one "
+                        "time dimension with is_partition: true",
                     )
                 )
 
@@ -203,7 +207,8 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                         ManifestIssue(
                             file,
                             f"{where}.name",
-                            f"measure {measure.name!r} is defined more than once (first in {measure_seen[measure.name]})",
+                            f"measure {measure.name!r} is defined more than once "
+                            f"(first in {measure_seen[measure.name]})",
                         )
                     )
                 measure_seen.setdefault(measure.name, f"semantic model {model.name!r}, {file}")
@@ -215,7 +220,8 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                         ManifestIssue(
                             file,
                             f"{where}.non_additive_dimension.name",
-                            f"non-additive dimension {snapshot.name!r} must be a time dimension of semantic model {model.name!r}",
+                            f"non-additive dimension {snapshot.name!r} must be a time "
+                            f"dimension of semantic model {model.name!r}",
                         )
                     )
                 for k, grouping in enumerate(snapshot.window_groupings):
@@ -238,7 +244,8 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                 ManifestIssue(
                     file,
                     f"{at}.entities[{j}]",
-                    f"entity {entity!r} is foreign in {models} with no primary or unique side: joining them would fan out (many-to-many)",
+                    f"entity {entity!r} is foreign in {models} with no primary or unique "
+                    "side: joining them would fan out (many-to-many)",
                 )
             )
 
@@ -250,7 +257,8 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                     ManifestIssue(
                         file,
                         f"metrics[{k}].name",
-                        f"metric {metric.name!r} is defined more than once (first in {metric_seen[metric.name][0]})",
+                        f"metric {metric.name!r} is defined more than once "
+                        f"(first in {metric_seen[metric.name][0]})",
                     )
                 )
             metric_seen.setdefault(metric.name, (file, metric))
@@ -261,6 +269,14 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                 issues.append(
                     ManifestIssue(
                         file, f"metrics[{k}].measure", f"unknown measure {metric.measure!r}"
+                    )
+                )
+            if metric.replaced_by is not None and metric.replaced_by not in metric_seen:
+                issues.append(
+                    ManifestIssue(
+                        file,
+                        f"metrics[{k}].replaced_by",
+                        f"unknown metric {metric.replaced_by!r}",
                     )
                 )
             for field in ("numerator", "denominator"):
@@ -279,7 +295,8 @@ def _semantic_issues(parsed: list[tuple[str, ManifestFile]]) -> list[ManifestIss
                         ManifestIssue(
                             file,
                             f"metrics[{k}].{field}",
-                            f"{field} must be a simple or cumulative metric; {reference!r} is a ratio",
+                            f"{field} must be a simple or cumulative metric; "
+                            f"{reference!r} is a ratio",
                         )
                     )
     return issues
