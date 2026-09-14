@@ -19,6 +19,10 @@ All notable changes to MetricBridge are documented here. The format follows
 
   Uniqueness is checked at startup only: restart the server after reloading a dimension table.
 
+- A refused manifest — invalid, or contradicted by the database — prints `metricbridge: ` and the
+  problem list on stderr, without a Python traceback, and exits with code 1. Other startup failures
+  still show their traceback.
+
 - `query_metric` answers a governed metric on DuckDB: `metricbridge --manifest PATH --duckdb FILE`.
   The database is opened read-only, with file access disabled.
 - Every answer states what is absent: `missing_periods` lists periods the data never produced,

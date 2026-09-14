@@ -11,6 +11,7 @@ on an exception.
 
 import argparse
 import os
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
@@ -32,7 +33,7 @@ from .contract import (
 from .contract import signature as metric_signature
 from .discovery import MetricIndex
 from .engine import DuckDBEngine, Engine, execute
-from .manifest import SemanticManifest, load_manifest
+from .manifest import ManifestError, SemanticManifest, load_manifest
 from .verify import verify
 
 INSTRUCTIONS = """MetricBridge serves governed metrics from a certified semantic manifest.
@@ -294,7 +295,14 @@ def main() -> None:
     if arguments.manifest is None:
         parser.error("no manifest: pass --manifest or set METRICBRIDGE_MANIFEST")
     engine = DuckDBEngine(arguments.duckdb, statement_timeout=arguments.statement_timeout)
-    build_server(load_manifest(arguments.manifest), engine).run(transport=arguments.transport)
+    try:
+        server = build_server(load_manifest(arguments.manifest), engine)
+    except ManifestError as error:
+        # The operator's to fix, not a crash: the problem list without a traceback. Anything else
+        # still raises with its traceback.
+        print(f"metricbridge: {error}", file=sys.stderr)
+        sys.exit(1)
+    server.run(transport=arguments.transport)
 
 
 if __name__ == "__main__":
