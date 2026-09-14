@@ -8,18 +8,24 @@ import pytest
 from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
 from mcp.types import ElicitResult
+from storefront_data import storefront_database
 
+from metricbridge import server as server_module
+from metricbridge.engine import DuckDBEngine
 from metricbridge.manifest import load_manifest
 from metricbridge.server import build_server
 
 STOREFRONT = Path(__file__).parent / "fixtures" / "storefront"
+Q3 = {"start_date": "2026-07-01", "end_date": "2026-09-30"}
 
 
 def exchange(conversation, *, elicitation=None, misses=None):
-    """Run one client conversation against a server wired to the storefront manifest."""
+    """Run one client conversation against a server wired to the seeded storefront."""
 
     async def run():
-        server = build_server(load_manifest(STOREFRONT), misses=misses)
+        server = build_server(
+            load_manifest(STOREFRONT), DuckDBEngine(storefront_database()), misses=misses
+        )
         low = server._lowlevel_server
         async with (
             create_client_server_memory_streams() as ((cr, cw), (sr, sw)),
@@ -52,13 +58,62 @@ def test_the_server_introduces_itself(tools):
 
 
 def test_only_the_governed_tools_are_exposed(tools):
-    assert {tool.name for tool in tools.tools} == {"discover_metrics", "get_metric_signature"}
+    assert {tool.name for tool in tools.tools} == {
+        "discover_metrics",
+        "get_metric_signature",
+        "query_metric",
+    }
 
 
 def test_the_descriptions_push_the_agent_down_the_protocol(tools):
     described = {tool.name: tool.description or "" for tool in tools.tools}
     assert "ALWAYS call this first" in described["discover_metrics"]
     assert "before query_metric" in described["get_metric_signature"]
+    assert "after get_metric_signature" in described["query_metric"]
+
+
+def test_a_metric_is_answered_end_to_end():
+    async def conversation(session, _):
+        return await session.call_tool(
+            "query_metric",
+            {
+                "metric": "revenue",
+                "date_range": Q3,
+                "dimensions": ["customer__region"],
+                "time_grain": "month",
+            },
+        )
+
+    payload = exchange(conversation).structured_content
+    assert payload["ok"] is True
+    assert len(payload["manifest_version"]) == 64
+    assert payload["rows"] == [
+        {"period": "2026-07-01", "customer__region": "AMER", "revenue": "80.00"},
+        {"period": "2026-07-01", "customer__region": "EMEA", "revenue": "150.00"},
+        {"period": "2026-09-01", "customer__region": None, "revenue": "30.00"},
+    ]
+    assert payload["missing_periods"] == ["2026-08-01"]
+    assert payload["null_key_rows"] == {"customer": 1}
+    assert payload["row_limit_reached"] is False
+
+
+def test_a_refused_query_comes_back_as_data_before_any_sql_exists():
+    async def conversation(session, _):
+        return await session.call_tool(
+            "query_metric", {"metric": "revenue", "date_range": Q3, "dimensions": ["warehouse"]}
+        )
+
+    result = exchange(conversation)
+    assert result.is_error is not True
+    payload = result.structured_content
+    assert payload["ok"] is False
+    assert payload["errors"][0]["code"] == "unknown_dimension"
+
+
+def test_the_server_will_not_start_without_a_database(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["metricbridge", "--manifest", str(STOREFRONT)])
+    with pytest.raises(SystemExit):
+        server_module.main()
 
 
 def test_no_tool_accepts_sql(tools):

@@ -18,9 +18,20 @@ from typing import Any, Literal
 from mcp.server.mcpserver import Context, MCPServer
 from pydantic import Field, create_model
 
+from .compiler import compile_query
+from .contract import (
+    DEFAULT_ROW_LIMIT,
+    DateRangeInput,
+    FilterInput,
+    OrderByInput,
+    QueryRequest,
+    RefusalError,
+    unknown_metric,
+    validate,
+)
 from .contract import signature as metric_signature
-from .contract import unknown_metric
 from .discovery import MetricIndex
+from .engine import DuckDBEngine, Engine, execute
 from .manifest import SemanticManifest, load_manifest
 
 INSTRUCTIONS = """MetricBridge serves governed metrics from a certified semantic manifest.
@@ -50,6 +61,20 @@ Returns the authorised cuts (with the qualified names to use), the supported tim
 mandatory date range and its maximum window, the filter operators, any filters the definition \
 always applies, ordering rules and row limits. Everything the gateway enforces is listed here, so \
 a request built from this signature is not guessed."""
+
+QUERY_DESCRIPTION = """Answer a governed metric. ALWAYS call this after get_metric_signature, and \
+build the request from that signature: every constraint it lists is enforced here.
+
+Send structured arguments only: the metric, a mandatory date_range, and any authorised \
+dimensions, time_grain, filters, order_by and row_limit. The gateway builds, checks and runs the \
+query itself.
+
+The reply states every absence instead of leaving a gap. `missing_periods` lists periods the data \
+never produced; they are absent, not zero. `null_key_rows` counts, per joined entity, rows whose \
+join key was empty. It does not count keys that match no row in the joined table, so `{}` does not \
+mean every row reconciled. `null` means nothing was counted: either this metric shape does not \
+count, or the row limit cut the answer off. `row_limit_reached` means rows were cut off, so \
+nothing is claimed about the rest. Exact decimals come back as strings."""
 
 # Raised by discovery rather than by a contract rule, so it lives here, not in the rule registry.
 DISCOVERY_CODES = frozenset({"no_match"})
@@ -96,7 +121,9 @@ async def ask_which_metric(ctx: Context, query: str, options: list[str]) -> str 
     return None
 
 
-def build_server(manifest: SemanticManifest, misses: Counter | None = None) -> MCPServer:
+def build_server(
+    manifest: SemanticManifest, engine: Engine, misses: Counter | None = None
+) -> MCPServer:
     """`misses` counts phrasings the catalog could not answer confidently.
 
     Each one is either a synonym missing from the manifest — a deterministic fix that helps every
@@ -205,6 +232,39 @@ def build_server(manifest: SemanticManifest, misses: Counter | None = None) -> M
             "signature": metric_signature(manifest, metric),
         }
 
+    @server.tool(name="query_metric", description=QUERY_DESCRIPTION, structured_output=True)
+    def query_metric(
+        metric: str,
+        date_range: DateRangeInput | None = None,
+        dimensions: list[str] | None = None,
+        time_grain: str | None = None,
+        filters: list[FilterInput] | None = None,
+        order_by: list[OrderByInput] | None = None,
+        row_limit: int = DEFAULT_ROW_LIMIT,
+    ) -> dict[str, Any]:
+        request = QueryRequest(
+            metric=metric,
+            date_range=date_range,
+            dimensions=dimensions or [],
+            time_grain=time_grain,
+            filters=filters or [],
+            order_by=order_by or [],
+            row_limit=row_limit,
+        )
+        try:
+            resolved = validate(manifest, request)
+            query = compile_query(manifest, resolved, dialect=engine.dialect)
+            answer = execute(manifest, resolved, query, engine)
+        except RefusalError as refused:
+            return refused.payload()
+        return {
+            "ok": True,
+            "manifest_version": manifest.version,
+            "metric": metric,
+            **answer,
+            "notices": resolved.notices,
+        }
+
     return server
 
 
@@ -216,11 +276,21 @@ def main() -> None:
         default=os.environ.get("METRICBRIDGE_MANIFEST"),
         help="directory or file of semantic manifest YAML (or set METRICBRIDGE_MANIFEST)",
     )
+    parser.add_argument(
+        "--duckdb", type=Path, required=True, help="DuckDB database file to query, opened read-only"
+    )
+    parser.add_argument(
+        "--statement-timeout",
+        type=float,
+        default=30.0,
+        help="seconds a statement may run before it is stopped (default: 30)",
+    )
     parser.add_argument("--transport", default="stdio", choices=("stdio", "sse", "streamable-http"))
     arguments = parser.parse_args()
     if arguments.manifest is None:
         parser.error("no manifest: pass --manifest or set METRICBRIDGE_MANIFEST")
-    build_server(load_manifest(arguments.manifest)).run(transport=arguments.transport)
+    engine = DuckDBEngine(arguments.duckdb, statement_timeout=arguments.statement_timeout)
+    build_server(load_manifest(arguments.manifest), engine).run(transport=arguments.transport)
 
 
 if __name__ == "__main__":

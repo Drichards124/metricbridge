@@ -8,6 +8,21 @@ All notable changes to MetricBridge are documented here. The format follows
 
 ### Added
 
+- `query_metric` answers a governed metric on DuckDB: `metricbridge --manifest PATH --duckdb FILE`.
+  The database is opened read-only, with file access disabled.
+- Every answer states what is absent: `missing_periods` lists periods the data never produced,
+  including a trailing-window period with no rows of its own; `null_key_rows` counts rows with an
+  empty join key per joined entity — not keys that match no row in the joined table — and is
+  `null` for ratio and cumulative metrics, which do not count them yet; and `row_limit_reached` says rows were cut off, in which case neither of the other
+  two is claimed.
+- `--statement-timeout SECONDS` (default 30) stops a long-running statement with
+  `statement_timeout`. A result above the row ceiling is refused with `row_cap_exceeded` rather
+  than truncated, and a database error returns `execution_failed` without the driver's message.
+- Exact decimals are returned as strings, so money is never rounded through a float; periods are
+  ISO dates.
+- Results are always fully ordered — the requested order, then every group key — with NULL last on
+  every engine, so the row limit keeps the same rows everywhere.
+
 - Generated SQL is re-parsed and asserted before it can be executed: one SELECT, declared tables
   only, every scan bounded on a time column (including inside CTEs), no `SELECT *`, and a row limit
   within the ceiling. Failures return `guardrail_violation`.
@@ -30,8 +45,8 @@ All notable changes to MetricBridge are documented here. The format follows
   ingestion date but measured by a business date; both columns are bounded.
 - Joins to dimensions are always LEFT, and each one reports its null-key row count in the result.
 
-- MCP server (`metricbridge --manifest PATH`, stdio) exposing `discover_metrics` and
-  `get_metric_signature`. Refusals come back as data (`ok: false` with structured errors), never as
+- MCP server (`metricbridge --manifest PATH --duckdb FILE`, stdio) exposing `discover_metrics`,
+  `get_metric_signature` and `query_metric`. Refusals come back as data (`ok: false` with structured errors), never as
   protocol errors.
 - Lexical metric discovery (BM25) over names, descriptions, synonyms and authorised cuts, filtered
   by domain and tier. Refusal suggestions use the same ranking, with fuzzy matching for typos.

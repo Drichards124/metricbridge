@@ -40,7 +40,11 @@ found, not just the first.
 | `unsupported_operator` | The filter operator is not one of the supported operators. | `filters` |
 | `unknown_order_field` | `order_by` names a field that is not in the result set. | `order_by` |
 | `row_limit_exceeded` | The requested `row_limit` is above the server ceiling. | `row_limit` |
+| `statement_timeout` | The statement ran past the operator's `--statement-timeout` and was stopped. Narrow the range or drop a cut. | — |
+| `row_cap_exceeded` | The database returned more rows than the ceiling. Nothing is returned, because a partial answer reads as a whole one; this means a gateway bug, so report it. | — |
+| `execution_failed` | The database could not run the statement. The message is fixed on purpose: driver errors can quote values. Operators see the error class and the statement in the server log. | — |
 
 Every code above belongs to a rule in the registry (`src/metricbridge/contract/rules.py`), except
-`unknown_metric`, which is raised before any rule can run. A test fails if this table and the
-registry ever disagree.
+`unknown_metric`, which is raised before any rule can run; `no_match`, raised by discovery; and the
+three execution codes, raised by the engine (`src/metricbridge/engine.py`). A test fails if this
+table and the codes the gateway can raise ever disagree.

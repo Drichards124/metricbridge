@@ -62,7 +62,7 @@ class TestGoldenStatements:
             "ON orders.customer_id = customer.customer_id "
             "WHERE orders.order_date >= $start_date AND orders.order_date < $end_date "
             "GROUP BY DATE_TRUNC('MONTH', orders.order_date), customer.region "
-            "ORDER BY revenue DESC "
+            "ORDER BY revenue DESC, period ASC, customer__region ASC "
             "LIMIT 100"
         )
 
@@ -165,6 +165,50 @@ def test_the_row_limit_is_injected_by_the_compiler(manifest):
     assert flat(compiled(manifest, row_limit=25).sql).endswith("LIMIT 25")
 
 
+class TestRowOrder:
+    """The limit keeps whichever rows sort first, so an unstated order is an unstated answer — and
+    1.7 compares engines row by row."""
+
+    def test_rows_come_back_in_key_order_when_no_order_is_asked(self, manifest):
+        sql = flat(compiled(manifest, dimensions=["channel"], time_grain="month").sql)
+        assert sql.endswith("ORDER BY period ASC, channel ASC LIMIT 100")
+
+    def test_a_requested_order_keeps_the_keys_as_tie_breakers(self, manifest):
+        sql = flat(
+            compiled(
+                manifest,
+                dimensions=["channel"],
+                time_grain="month",
+                order_by=[{"field": "channel", "direction": "asc"}],
+            ).sql
+        )
+        assert sql.endswith("ORDER BY channel ASC, period ASC LIMIT 100")
+
+    def test_every_shape_is_ordered_by_its_keys(self, manifest):
+        for metric in ("average_order_value", "inventory_on_hand", "trailing_12m_revenue"):
+            sql = flat(compiled(manifest, metric=metric, time_grain="month").sql)
+            assert sql.endswith("ORDER BY period ASC LIMIT 100"), metric
+
+    @pytest.mark.parametrize(
+        ("dialect", "direction", "expected"),
+        [
+            ("postgres", "desc", "ORDER BY channel DESC NULLS LAST"),
+            ("snowflake", "desc", "ORDER BY channel DESC NULLS LAST"),
+            ("bigquery", "asc", "ORDER BY channel ASC NULLS LAST"),
+        ],
+    )
+    def test_nulls_sort_last_on_every_dialect(self, manifest, dialect, direction, expected):
+        """Engines disagree on where NULL sorts, so which rows survive the limit would differ. The
+        clause is omitted only where NULLS LAST is already that engine's default."""
+        query = compiled(
+            manifest,
+            dialect=dialect,
+            dimensions=["channel"],
+            order_by=[{"field": "channel", "direction": direction}],
+        )
+        assert expected in flat(query.sql)
+
+
 class TestRatioMetrics:
     def test_a_ratio_divides_two_aggregates_after_grouping(self, manifest):
         """Dividing sums, never summing ratios: the average of averages is a different number."""
@@ -227,6 +271,7 @@ class TestSnapshotMetrics:
             ") "
             "SELECT period, SUM(value) AS inventory_on_hand "
             "FROM ranked WHERE position = 1 GROUP BY period "
+            "ORDER BY period ASC "
             "LIMIT 100"
         )
 
@@ -285,6 +330,7 @@ class TestCumulativeMetrics:
             "ON measured.occurred_at >= periods.period - INTERVAL 11 MONTH "
             "AND measured.occurred_at < periods.period + INTERVAL 1 MONTH "
             "GROUP BY periods.period "
+            "ORDER BY period ASC "
             "LIMIT 100"
         )
 

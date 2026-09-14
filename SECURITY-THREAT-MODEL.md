@@ -45,7 +45,11 @@ trusted path.
 **Boundary 3 — gateway to warehouse.** The generated statement is re-parsed and asserted before
 execution: one SELECT, declared tables only, every scan bounded, no `SELECT *`, a row limit within
 the ceiling. These assertions run on the syntax tree, because string matching fails open on the
-first comment or subquery.
+first comment or subquery. Behind them, the connection itself is read-only, cannot reach files,
+and has its configuration locked; a statement is stopped at the operator's deadline; and a result
+above the row ceiling is refused, not truncated. A database error reaches the agent as a fixed
+message, and the server log as the error class and the statement — whose values are placeholders —
+because driver messages can quote values.
 
 ## In scope — treated as vulnerabilities
 
@@ -70,6 +74,6 @@ catalogue of those failures and their guards is [docs/failure-modes.md](docs/fai
    declared; that is Boundary 2.
 2. **Warehouse permissions.** If the configured credential can read a table, so can a metric over it.
    Grant the gateway only what its metrics need.
-3. **Denial of service through expensive queries.** Bounded scans, row caps and (from 1.6) statement
-   timeouts limit damage; a determined operator-authorised agent can still spend money.
+3. **Denial of service through expensive queries.** Bounded scans, row caps and statement timeouts
+   (`--statement-timeout`) limit damage; a determined operator-authorised agent can still spend money.
 4. **The MCP client's behaviour**, including whether an elicitation reaches a human.

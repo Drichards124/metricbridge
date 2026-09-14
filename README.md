@@ -28,12 +28,14 @@ query_metric(stock_level, time_grain="month")   # a snapshot measure with no dec
 ## Running it
 
 ```bash
-uv run metricbridge --manifest path/to/manifest/   # or set METRICBRIDGE_MANIFEST
+uv run metricbridge --manifest path/to/manifest/ --duckdb path/to/warehouse.duckdb
 ```
 
-It speaks MCP over stdio, so point any MCP client at that command. Two tools are live today —
-`discover_metrics` and `get_metric_signature` — and `query_metric` arrives with the compiler and an
-engine (milestones 1.4–1.6). There is no tool that accepts SQL, by design.
+It speaks MCP over stdio, so point any MCP client at that command. Three tools are live —
+`discover_metrics`, `get_metric_signature` and `query_metric` — answering on DuckDB, which is
+opened read-only; `--statement-timeout` (default 30 seconds) stops a long query. Postgres,
+ClickHouse, BigQuery and Snowflake follow in milestones 1.7 and 1.9. There is no tool that accepts
+SQL, by design.
 
 ## Correctness is the product
 
