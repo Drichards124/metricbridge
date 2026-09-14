@@ -19,6 +19,16 @@ CREATE SCHEMA billing;
 CREATE TABLE billing.fct_subscription_revenue_daily (
     revenue_date DATE, amount INTEGER, subscription_id INTEGER, customer_id INTEGER
 );
+-- Empty: no answer in the suite reads them, but the server verifies every declared table exists.
+CREATE TABLE storefront.dim_products (product_id INTEGER, category VARCHAR, region VARCHAR);
+CREATE SCHEMA warehouse;
+CREATE TABLE warehouse.fct_inventory_daily (
+    product_id INTEGER, snapshot_date DATE, warehouse VARCHAR, units INTEGER
+);
+CREATE SCHEMA logistics;
+CREATE TABLE logistics.fct_shipments (
+    shipment_id INTEGER, customer_id INTEGER, loaded_at DATE, shipped_date DATE, carrier VARCHAR
+);
 """
 
 ORDER_LINES = [

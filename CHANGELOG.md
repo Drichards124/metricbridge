@@ -8,6 +8,17 @@ All notable changes to MetricBridge are documented here. The format follows
 
 ### Added
 
+- The server checks the manifest against the database before it starts, and refuses to start
+  with every problem listed when:
+  - a declared table cannot be read;
+  - an entity, dimension or measure expression does not evaluate on its table;
+  - a key that a join targets repeats a non-null value, which would silently inflate every measure
+    joined through it (the count is reported, not the values);
+  - the DuckDB file is named like a schema the manifest uses (`storefront.duckdb` with
+    `storefront.<table>`), which makes every table reference ambiguous — rename the file.
+
+  Uniqueness is checked at startup only: restart the server after reloading a dimension table.
+
 - `query_metric` answers a governed metric on DuckDB: `metricbridge --manifest PATH --duckdb FILE`.
   The database is opened read-only, with file access disabled.
 - Every answer states what is absent: `missing_periods` lists periods the data never produced,

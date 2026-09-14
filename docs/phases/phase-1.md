@@ -191,8 +191,8 @@ With an engine attached, check the manifest against the warehouse it describes: 
 column exists, and every key declared unique is unique in the data — otherwise an "N:1" join fans
 out while the manifest says it cannot. Split from 1.6 because both need introspection queries and
 bring their own failure modes.
-**Verify:** a manifest naming a missing column is refused at startup; a seeded duplicate primary
-key is reported.
+**Verify:** a manifest naming a missing column is refused at startup; a seeded duplicate key that
+a join targets is refused at startup.
 
 ### 1.6c · Unreconciled entity accounting
 Replace `null_key_rows` with `unreconciled`: per joined entity, the rows and the metric value that
@@ -279,3 +279,4 @@ publishes only from a green candidate. Maintainer briefings regenerated from the
 - 13 Sep 2026 — 1.2b run: D14 added (derived deferred, metric-level filters into Phase 1 as new milestone 1.2c); case-insensitive value matching fixed.
 - 13 Sep 2026 — 1.6 design agreed: DuckDB has no statement-timeout or row-cap setting, so the adapter enforces both; the row cap refuses rather than truncates; driver error text is neither returned nor logged; results are totally ordered with NULL last; ratio and cumulative answers report null-key counts as `null` until counted. Warehouse verification (column references, key uniqueness) split into new milestone 1.6b.
 - 13 Sep 2026 — 1.6 review found `null_key_rows` misses orphan keys and is lost to the row limit; pre-limit unreconciled accounting for every shape deferred to new milestone 1.6c, and both gaps recorded in `docs/failure-modes.md`.
+- 13 Sep 2026 — 1.6b design agreed: a warehouse that contradicts the manifest stops the server at startup — unreadable tables, expressions that do not evaluate, and repeated non-null values in keys a join targets (keys nothing joins to are not scanned). The uniqueness count is the one full-table scan, allowed because it is built from the manifest before any request; security goal 3 reworded to say so. A DuckDB file named like a manifest schema gets its own message.

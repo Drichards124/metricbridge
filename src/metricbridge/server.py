@@ -33,6 +33,7 @@ from .contract import signature as metric_signature
 from .discovery import MetricIndex
 from .engine import DuckDBEngine, Engine, execute
 from .manifest import SemanticManifest, load_manifest
+from .verify import verify
 
 INSTRUCTIONS = """MetricBridge serves governed metrics from a certified semantic manifest.
 
@@ -129,7 +130,10 @@ def build_server(
     Each one is either a synonym missing from the manifest — a deterministic fix that helps every
     later question — or, in volume, the measured recall failure that would justify reaching for
     embeddings. Guessing produces neither.
+
+    Raises `ManifestError` when the warehouse contradicts the manifest, before any tool exists.
     """
+    verify(manifest, engine)
     index = MetricIndex(manifest)
     misses = misses if misses is not None else Counter()
     server = MCPServer(name="metricbridge", instructions=INSTRUCTIONS)

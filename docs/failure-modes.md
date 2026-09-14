@@ -32,7 +32,8 @@ request is rejected, so the case cannot arise · **unguarded** — known, not ye
 | Null-key counts lost to the row limit | When the limit cuts the answer, the count is `null` although an exact one was computable | unguarded | `null` rather than an under-count (`tests/test_engine.py::TestAnswers::test_nothing_is_claimed_about_rows_the_limit_cut_off`); exact counts in 1.6c |
 | Fan trap (two facts, one shared dimension) | One fact's measure multiplies by the other's row count | unguarded | 1.7 corpus (D11) |
 | Chasm trap (two unrelated facts joined through a dimension) | A cartesian product presented as a total | unguarded | 1.7 corpus (D11) |
-| Declared key is not actually unique | A "N:1" join fans out because the data disagrees with the manifest | unguarded | verified against the warehouse in 1.6b |
+| Declared key is not actually unique | A "N:1" join fans out because the data disagrees with the manifest | refused | every key a join targets is checked when the server starts, and a repeated non-null value stops it (`tests/test_verify.py::test_a_duplicated_join_key_is_refused_without_quoting_its_values`; over generated keys, `tests/test_verify.py::test_a_key_is_refused_exactly_when_a_value_repeats`) |
+| Key duplicated after the server started | The startup check passed, then a load repeats a customer: the join fans out until the next restart | unguarded | checked at startup only; restart the server after changing a dimension table |
 | SCD type 2 dimension | Joining without validity windows attributes history to the current row | refused | `natural` entities not supported (D9); Phase 2 |
 
 ## Time

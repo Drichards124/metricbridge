@@ -17,7 +17,9 @@ control, not the agent's model, and not the MCP client.
    parameters. There is no tool that accepts SQL.
 2. **Nothing outside the manifest is reachable.** A table absent from a semantic model cannot be
    read, however a request is phrased.
-3. **No scan is unbounded.** Every statement is bounded on a time column and carries a row limit.
+3. **No scan is unbounded.** Every statement that answers a request is bounded on a time column and
+   carries a row limit. The one exception runs before any request is accepted: at startup, each
+   key a join targets is counted over its whole table, because a key is only unique over all of it.
 4. **Result values stay out of logs and traces.** Telemetry records what was asked and what it cost.
 
 ## Roles
@@ -50,6 +52,11 @@ and has its configuration locked; a statement is stopped at the operator's deadl
 above the row ceiling is refused, not truncated. A database error reaches the agent as a fixed
 message, and the server log as the error class and the statement — whose values are placeholders —
 because driver messages can quote values.
+
+Before the server accepts a request, it checks the manifest against the warehouse: every declared
+table can be read and every declared expression evaluates on it, and every key a join targets is
+unique. These statements are built from the manifest alone, never from a request, so they do not
+pass through the request guardrail. A repeated key is reported as a count, never as its values.
 
 ## In scope — treated as vulnerabilities
 
