@@ -39,6 +39,8 @@ extend-select = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Shared seed data (storefront_data.py) is importable from tests/conformance/ too.
+pythonpath = ["tests"]
 # The SDK moves fast (FastMCP -> MCPServer, logging deprecated). Fail on its deprecations rather
 # than discovering them in a release.
 filterwarnings = ["error::mcp.shared.exceptions.MCPDeprecationWarning"]
