@@ -1,0 +1,7 @@
+id: web_revenue_cut_by_channel
+catalog: storefront
+request:
+  metric: web_revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  dimensions: [channel]
+refusal: fixed_by_definition

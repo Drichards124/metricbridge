@@ -1,0 +1,6 @@
+id: stock_level_over_a_quarter_without_a_grain
+catalog: storefront
+request:
+  metric: stock_level
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+refusal: non_additive_cut

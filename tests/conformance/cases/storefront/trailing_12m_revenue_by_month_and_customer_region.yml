@@ -1,0 +1,21 @@
+id: trailing_12m_revenue_by_month_and_customer_region
+catalog: storefront
+request:
+  metric: trailing_12m_revenue
+  date_range: {start_date: "2026-04-01", end_date: "2026-06-30"}
+  dimensions: [customer__region]
+  time_grain: month
+# A region with no revenue in a month still has a trailing total from the months before.
+reference_sql: |
+  WITH anchors AS (
+    SELECT CAST(generate_series AS DATE) AS period
+    FROM generate_series(DATE '2026-04-01', DATE '2026-06-01', INTERVAL 1 MONTH)
+  )
+  SELECT anchors.period, c.region AS customer__region, SUM(r.amount) AS trailing_12m_revenue
+  FROM anchors
+  JOIN billing.fct_subscription_revenue_daily r
+    ON r.revenue_date >= anchors.period + INTERVAL 1 MONTH - INTERVAL 12 MONTH
+   AND r.revenue_date < anchors.period + INTERVAL 1 MONTH
+  LEFT JOIN storefront.dim_customers c ON r.customer_id = c.customer_id
+  GROUP BY anchors.period, c.region
+  ORDER BY anchors.period, c.region NULLS LAST

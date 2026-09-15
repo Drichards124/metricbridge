@@ -1,0 +1,15 @@
+id: shipments_by_week_and_customer_segment
+catalog: storefront
+request:
+  metric: shipments
+  date_range: {start_date: "2026-02-02", end_date: "2026-03-29"}
+  dimensions: [customer__segment]
+  time_grain: week
+reference_sql: |
+  SELECT date_trunc('week', s.shipped_date) AS period, c.segment AS customer__segment,
+    COUNT(s.shipment_id) AS shipments
+  FROM logistics.fct_shipments s
+  LEFT JOIN storefront.dim_customers c ON s.customer_id = c.customer_id
+  WHERE s.shipped_date >= DATE '2026-02-02' AND s.shipped_date < DATE '2026-03-30'
+  GROUP BY period, c.segment
+  ORDER BY period, c.segment NULLS LAST

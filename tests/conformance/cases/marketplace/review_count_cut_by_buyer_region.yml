@@ -1,0 +1,8 @@
+id: review_count_cut_by_buyer_region
+catalog: marketplace
+request:
+  metric: review_count
+  date_range: {start_date: "2026-01-01", end_date: "2026-09-30"}
+  dimensions: [buyer__region]
+# Chasm trap as a cut: reviews reach buyers only through items and sellers.
+refusal: unknown_dimension

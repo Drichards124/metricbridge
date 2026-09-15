@@ -1,0 +1,14 @@
+id: web_revenue_by_month
+catalog: storefront
+request:
+  metric: web_revenue
+  date_range: {start_date: "2026-01-01", end_date: "2026-09-30"}
+  time_grain: month
+# web_revenue: revenue, always filtered to channel = web by its definition.
+reference_sql: |
+  SELECT date_trunc('month', order_date) AS period, SUM(amount) AS web_revenue
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2026-01-01' AND order_date < DATE '2026-10-01'
+    AND channel = 'web'
+  GROUP BY period
+  ORDER BY period

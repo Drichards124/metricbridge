@@ -1,0 +1,12 @@
+id: net_revenue_by_ship_mode
+catalog: tpch
+request:
+  metric: net_revenue
+  date_range: {start_date: "1995-01-01", end_date: "1995-03-31"}
+  dimensions: [ship_mode]
+reference_sql: |
+  SELECT l_shipmode AS ship_mode, SUM(l_extendedprice * (1 - l_discount)) AS net_revenue
+  FROM tpch.lineitem
+  WHERE l_shipdate >= DATE '1995-01-01' AND l_shipdate < DATE '1995-04-01'
+  GROUP BY l_shipmode
+  ORDER BY l_shipmode NULLS LAST

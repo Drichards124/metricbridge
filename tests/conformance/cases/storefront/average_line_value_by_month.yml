@@ -1,0 +1,13 @@
+id: average_line_value_by_month
+catalog: storefront
+request:
+  metric: average_line_value
+  date_range: {start_date: "2026-01-01", end_date: "2026-09-30"}
+  time_grain: month
+# average_line_value: mean amount per order line, recomputed from the lines in each month.
+reference_sql: |
+  SELECT date_trunc('month', order_date) AS period, AVG(amount) AS average_line_value
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2026-01-01' AND order_date < DATE '2026-10-01'
+  GROUP BY period
+  ORDER BY period

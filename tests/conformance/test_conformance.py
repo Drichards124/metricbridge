@@ -26,4 +26,9 @@ def test_case(path):
 
     answer, reference = run_case(case)
 
-    assert compare(answer, case, reference) == []
+    differences = compare(answer, case, reference)
+    if case.known_divergence:
+        # Strict: once MetricBridge agrees, the mark has to go, or the catalog records a closed gap.
+        assert differences, f"agrees now: remove known_divergence {case.known_divergence!r}"
+        pytest.xfail(f"known divergence: {case.known_divergence}")
+    assert differences == []

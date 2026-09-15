@@ -1,0 +1,7 @@
+id: inventory_on_hand_cut_by_customer_region
+catalog: storefront
+request:
+  metric: inventory_on_hand
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  dimensions: [customer__region]
+refusal: unknown_dimension

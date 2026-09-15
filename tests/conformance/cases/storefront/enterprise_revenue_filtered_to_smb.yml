@@ -1,0 +1,10 @@
+id: enterprise_revenue_filtered_to_smb
+catalog: storefront
+request:
+  metric: enterprise_revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  filters:
+    - {field: customer__segment, operator: "=", value: smb}
+# The definition allows enterprise and strategic only: smb can never match, and an empty answer
+# would read like a real zero.
+refusal: contradictory_filter

@@ -1,0 +1,13 @@
+id: average_order_value_by_channel
+catalog: storefront
+request:
+  metric: average_order_value
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  dimensions: [channel]
+# average_order_value: revenue divided by distinct orders, each aggregated per group first.
+reference_sql: |
+  SELECT channel, SUM(amount) / COUNT(DISTINCT order_id) AS average_order_value
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2026-07-01' AND order_date < DATE '2026-10-01'
+  GROUP BY channel
+  ORDER BY channel NULLS LAST

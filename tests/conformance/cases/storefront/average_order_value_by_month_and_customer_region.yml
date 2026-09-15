@@ -1,0 +1,16 @@
+id: average_order_value_by_month_and_customer_region
+catalog: storefront
+request:
+  metric: average_order_value
+  date_range: {start_date: "2026-01-01", end_date: "2026-03-31"}
+  dimensions: [customer__region]
+  time_grain: month
+# A group with a blank key (no customer, unknown customer, no region) keeps its ratio.
+reference_sql: |
+  SELECT date_trunc('month', o.order_date) AS period, c.region AS customer__region,
+    SUM(o.amount) / COUNT(DISTINCT o.order_id) AS average_order_value
+  FROM storefront.fct_order_lines o
+  LEFT JOIN storefront.dim_customers c ON o.customer_id = c.customer_id
+  WHERE o.order_date >= DATE '2026-01-01' AND o.order_date < DATE '2026-04-01'
+  GROUP BY period, c.region
+  ORDER BY period, c.region NULLS LAST

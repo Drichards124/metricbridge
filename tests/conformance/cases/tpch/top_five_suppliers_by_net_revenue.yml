@@ -1,0 +1,18 @@
+id: top_five_suppliers_by_net_revenue
+catalog: tpch
+request:
+  metric: net_revenue
+  date_range: {start_date: "1996-10-01", end_date: "1996-12-31"}
+  dimensions: [supplier__supplier_name]
+  order_by:
+    - {field: net_revenue, direction: desc}
+  row_limit: 5
+reference_sql: |
+  SELECT s.s_name AS supplier__supplier_name,
+    SUM(l.l_extendedprice * (1 - l.l_discount)) AS net_revenue
+  FROM tpch.lineitem l
+  LEFT JOIN tpch.supplier s ON l.l_suppkey = s.s_suppkey
+  WHERE l.l_shipdate >= DATE '1996-10-01' AND l.l_shipdate < DATE '1997-01-01'
+  GROUP BY s.s_name
+  ORDER BY net_revenue DESC NULLS LAST, s.s_name NULLS LAST
+  LIMIT 5

@@ -1,0 +1,26 @@
+id: opening_stock_by_month_and_product_category
+catalog: storefront
+request:
+  metric: opening_stock
+  date_range: {start_date: "2026-04-01", end_date: "2026-06-30"}
+  dimensions: [product__category]
+  time_grain: month
+# opening_stock: per product, the rows on its first snapshot day in the period (window_choice min).
+# The orphan product and products with no category land in the NULL category.
+reference_sql: |
+  WITH scoped AS (
+    SELECT date_trunc('month', i.snapshot_date) AS period, p.category, i.product_id,
+      i.snapshot_date, i.units,
+      MIN(i.snapshot_date) OVER (
+        PARTITION BY date_trunc('month', i.snapshot_date), p.category, i.product_id
+      ) AS chosen
+    FROM warehouse.fct_inventory_daily i
+    LEFT JOIN storefront.dim_products p ON i.product_id = p.product_id
+    WHERE i.snapshot_date >= DATE '2026-04-01' AND i.snapshot_date < DATE '2026-07-01'
+  )
+  SELECT period, category AS product__category, SUM(units) AS opening_stock
+  FROM scoped
+  WHERE snapshot_date = chosen
+  GROUP BY period, category
+  ORDER BY period, category NULLS LAST
+known_divergence: Snapshot keeps one row on the chosen day

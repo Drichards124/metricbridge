@@ -8,6 +8,7 @@ import pytest
 from harness import CaseError, compare, load_case, normalise, run_case
 from hypothesis import given
 from hypothesis import strategies as st
+from storefront_data import storefront_database
 
 VALID = """\
 id: revenue_by_channel
@@ -20,6 +21,13 @@ reference_sql: |
   SELECT channel, SUM(amount) AS revenue FROM storefront.fct_order_lines
   GROUP BY channel ORDER BY channel NULLS LAST
 """
+
+
+@pytest.fixture(autouse=True)
+def hand_worked_storefront(monkeypatch):
+    """The harness's own tests run on the seed whose answers are worked out by hand."""
+    catalog = (harness.FIXTURES / "storefront", storefront_database)
+    monkeypatch.setitem(harness.CATALOGS, "storefront", catalog)
 
 
 class TestLoadCase:
@@ -77,6 +85,15 @@ class TestLoadCase:
         path.write_text(VALID.replace("GROUP BY channel", "GROUP BY BY channel"))
 
         with pytest.raises(CaseError, match="reference_sql"):
+            load_case(path)
+
+    def test_a_known_divergence_names_an_entry_in_the_failure_modes_catalog(self, tmp_path):
+        path = tmp_path / "revenue_by_channel.yml"
+        path.write_text(VALID + "known_divergence: Anchor dropping in inactive periods\n")
+        assert load_case(path).known_divergence == "Anchor dropping in inactive periods"
+
+        path.write_text(VALID + "known_divergence: a gap nobody wrote down\n")
+        with pytest.raises(CaseError, match="failure-modes"):
             load_case(path)
 
     def test_a_single_row_reference_needs_no_order(self, tmp_path):

@@ -1,0 +1,10 @@
+id: trailing_12m_revenue_as_of_the_range_end
+catalog: storefront
+request:
+  metric: trailing_12m_revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+# No grain: one figure, the twelve months ending on the last day of the range.
+reference_sql: |
+  SELECT SUM(amount) AS trailing_12m_revenue
+  FROM billing.fct_subscription_revenue_daily
+  WHERE revenue_date >= DATE '2025-10-01' AND revenue_date < DATE '2026-10-01'

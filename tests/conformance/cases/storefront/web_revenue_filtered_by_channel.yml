@@ -1,0 +1,9 @@
+id: web_revenue_filtered_by_channel
+catalog: storefront
+request:
+  metric: web_revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  filters:
+    - {field: channel, operator: "=", value: store}
+# web_revenue pins channel to one value, so channel is not a filter of this metric at all.
+refusal: fixed_by_definition

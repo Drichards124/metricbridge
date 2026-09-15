@@ -1,0 +1,15 @@
+id: revenue_by_customer_region
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  dimensions: [customer__region]
+# Joins to dimensions are LEFT: lines with no customer, an unknown customer, or a customer with no
+# region all land in the NULL region.
+reference_sql: |
+  SELECT c.region AS customer__region, SUM(o.amount) AS revenue
+  FROM storefront.fct_order_lines o
+  LEFT JOIN storefront.dim_customers c ON o.customer_id = c.customer_id
+  WHERE o.order_date >= DATE '2026-07-01' AND o.order_date < DATE '2026-10-01'
+  GROUP BY c.region
+  ORDER BY c.region NULLS LAST

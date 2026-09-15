@@ -1,0 +1,8 @@
+id: gmv_cut_by_review_stars
+catalog: marketplace
+request:
+  metric: gmv
+  date_range: {start_date: "2026-01-01", end_date: "2026-09-30"}
+  dimensions: [stars]
+# Chasm trap as a cut: items reach reviews only through a shared seller.
+refusal: unknown_dimension

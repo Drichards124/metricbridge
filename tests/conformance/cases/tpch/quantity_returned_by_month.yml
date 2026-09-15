@@ -1,0 +1,15 @@
+id: quantity_returned_by_month
+catalog: tpch
+request:
+  metric: quantity_shipped
+  date_range: {start_date: "1994-01-01", end_date: "1994-12-31"}
+  time_grain: month
+  filters:
+    - {field: return_flag, operator: "=", value: R}
+reference_sql: |
+  SELECT date_trunc('month', l_shipdate) AS period, SUM(l_quantity) AS quantity_shipped
+  FROM tpch.lineitem
+  WHERE l_shipdate >= DATE '1994-01-01' AND l_shipdate < DATE '1995-01-01'
+    AND l_returnflag = 'R'
+  GROUP BY period
+  ORDER BY period

@@ -1,0 +1,10 @@
+id: revenue_total_q3
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+# revenue: sum of amount over order lines whose order_date is in the range.
+reference_sql: |
+  SELECT SUM(amount) AS revenue
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2026-07-01' AND order_date < DATE '2026-10-01'

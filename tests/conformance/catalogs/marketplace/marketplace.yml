@@ -1,0 +1,110 @@
+# Two facts sharing dimensions: the fan-trap and chasm-trap shapes. Each route to a trap must be
+# refused, never answered with a fanned-out number.
+semantic_models:
+  - name: order_items
+    table: marketplace.fct_order_items
+    description: One row per item sold.
+    entities:
+      - {name: order_item, type: primary, expr: order_item_id}
+      - {name: marketplace_order, type: foreign, expr: order_id}
+      - {name: seller, type: foreign, expr: seller_id}
+      - {name: buyer, type: foreign, expr: buyer_id}
+    dimensions:
+      - {name: sold_date, type: time, time_granularity: day, is_partition: true}
+      - {name: item_category, type: categorical}
+    measures:
+      - {name: gmv, agg: sum, expr: price}
+      - {name: items_sold, agg: count, expr: order_item_id}
+
+  - name: orders
+    table: marketplace.fct_orders
+    description: One row per order; the shipping fee is charged once per order.
+    entities:
+      - {name: marketplace_order, type: primary, expr: order_id}
+      - {name: buyer, type: foreign, expr: buyer_id}
+    dimensions:
+      - {name: ordered_date, type: time, time_granularity: day, is_partition: true}
+      - {name: order_status, type: categorical}
+    measures:
+      - {name: shipping_fees, agg: sum, expr: shipping_fee}
+
+  - name: reviews
+    table: marketplace.fct_reviews
+    description: One row per seller review.
+    entities:
+      - {name: review, type: primary, expr: review_id}
+      - {name: seller, type: foreign, expr: seller_id}
+    dimensions:
+      - {name: reviewed_date, type: time, time_granularity: day, is_partition: true}
+      - {name: stars, type: categorical}
+    measures:
+      - {name: review_count, agg: count, expr: review_id}
+
+  - name: sellers
+    table: marketplace.dim_sellers
+    description: One row per seller.
+    entities:
+      - {name: seller, type: primary, expr: seller_id}
+    dimensions:
+      - {name: tier, type: categorical}
+
+  - name: buyers
+    table: marketplace.dim_buyers
+    description: One row per buyer.
+    entities:
+      - {name: buyer, type: primary, expr: buyer_id}
+    dimensions:
+      - {name: region, type: categorical}
+
+metrics:
+  - name: gmv
+    type: simple
+    measure: gmv
+    description: Gross merchandise value of items sold.
+    tier: certified
+    owner: marketplace
+    domain: sales
+
+  - name: items_sold
+    type: simple
+    measure: items_sold
+    description: Items sold.
+    tier: certified
+    owner: marketplace
+    domain: sales
+
+  - name: shipping_fees
+    type: simple
+    measure: shipping_fees
+    description: Shipping fees charged, once per order.
+    tier: certified
+    owner: marketplace
+    domain: sales
+
+  - name: review_count
+    type: simple
+    measure: review_count
+    description: Seller reviews received.
+    tier: certified
+    owner: marketplace
+    domain: trust
+
+  # Chasm trap: two facts related only through sellers.
+  - name: gmv_per_review
+    type: ratio
+    numerator: gmv
+    denominator: review_count
+    description: Merchandise value per seller review.
+    tier: experimental
+    owner: marketplace
+    domain: trust
+
+  # Fan trap: an order-level fee over item-level rows.
+  - name: shipping_fee_per_item
+    type: ratio
+    numerator: shipping_fees
+    denominator: items_sold
+    description: Shipping fees per item sold.
+    tier: experimental
+    owner: marketplace
+    domain: sales

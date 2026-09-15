@@ -1,0 +1,7 @@
+id: gmv_per_review_across_two_facts
+catalog: marketplace
+request:
+  metric: gmv_per_review
+  date_range: {start_date: "2026-01-01", end_date: "2026-09-30"}
+# Chasm trap: items and reviews meet only at sellers; joining them multiplies both.
+refusal: unsupported_metric_shape

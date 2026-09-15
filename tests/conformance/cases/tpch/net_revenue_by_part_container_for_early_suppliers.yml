@@ -1,0 +1,20 @@
+id: net_revenue_by_part_container_for_early_suppliers
+catalog: tpch
+request:
+  metric: net_revenue
+  date_range: {start_date: "1995-01-01", end_date: "1995-12-31"}
+  dimensions: [part__container]
+  filters:
+    - {field: supplier__supplier_name, operator: like, value: "Supplier#00000001%"}
+# Two joins in one request, each one hop from lineitem: the part for the cut, the supplier for the
+# filter.
+reference_sql: |
+  SELECT p.p_container AS part__container,
+    SUM(l.l_extendedprice * (1 - l.l_discount)) AS net_revenue
+  FROM tpch.lineitem l
+  LEFT JOIN tpch.part p ON l.l_partkey = p.p_partkey
+  LEFT JOIN tpch.supplier s ON l.l_suppkey = s.s_suppkey
+  WHERE l.l_shipdate >= DATE '1995-01-01' AND l.l_shipdate < DATE '1996-01-01'
+    AND s.s_name LIKE 'Supplier#00000001%'
+  GROUP BY p.p_container
+  ORDER BY p.p_container NULLS LAST

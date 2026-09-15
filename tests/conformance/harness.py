@@ -8,10 +8,12 @@ import anyio
 import duckdb
 import sqlglot
 import yaml
+from marketplace_seed import marketplace_database
 from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
-from storefront_data import storefront_database
+from storefront_seed import storefront_corpus_database
+from tpch_data import tpch_database
 
 from metricbridge.contract import QueryRequest
 from metricbridge.engine import DuckDBEngine
@@ -20,8 +22,17 @@ from metricbridge.server import build_server
 
 FLOAT_PLACES = 9
 FIXTURES = Path(__file__).parent.parent / "fixtures"
+FAILURE_MODES = Path(__file__).parents[2] / "docs" / "failure-modes.md"
 # A case names its catalog: the manifest directory, and the function that seeds its database.
-CATALOGS = {"storefront": (FIXTURES / "storefront", storefront_database)}
+CATALOGS = {
+    "storefront": (FIXTURES / "storefront", storefront_corpus_database),
+    "tpch": (Path(__file__).parent / "catalogs" / "tpch", tpch_database),
+    "marketplace": (Path(__file__).parent / "catalogs" / "marketplace", marketplace_database),
+    "marketplace_unowned": (
+        Path(__file__).parent / "catalogs" / "marketplace_unowned",
+        marketplace_database,
+    ),
+}
 
 
 class CaseError(Exception):
@@ -37,6 +48,9 @@ class Case(BaseModel):
     reference_sql: str | None = None
     refusal: str | None = None
     manifest_refusal_message: str | None = None
+    # A divergence recorded in docs/failure-modes.md, awaiting its fix: the case runs, and must
+    # still differ, so the mark cannot outlive the gap.
+    known_divergence: str | None = None
 
     @model_validator(mode="after")
     def _one_outcome(self) -> "Case":
@@ -133,6 +147,11 @@ def load_case(path: Path) -> Case:
         raise CaseError(f"{path.name}: {error}") from None
     if case.id != path.stem:  # one name per case, so a report line finds its file
         raise CaseError(f"{path.name}: id {case.id!r} must match the file name {path.stem!r}")
+    if case.known_divergence and case.known_divergence not in FAILURE_MODES.read_text():
+        raise CaseError(
+            f"{path.name}: known_divergence {case.known_divergence!r} is not an entry in "
+            "docs/failure-modes.md; record the divergence there first"
+        )
     return case
 
 

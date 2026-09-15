@@ -1,0 +1,14 @@
+id: stock_level_by_day_and_warehouse
+catalog: storefront
+request:
+  metric: stock_level
+  date_range: {start_date: "2026-09-01", end_date: "2026-09-07"}
+  dimensions: [warehouse]
+  time_grain: day
+# At its base grain a snapshot with no declared roll-up is a plain sum of that day's rows.
+reference_sql: |
+  SELECT snapshot_date AS period, warehouse, SUM(units) AS stock_level
+  FROM warehouse.fct_inventory_daily
+  WHERE snapshot_date >= DATE '2026-09-01' AND snapshot_date < DATE '2026-09-08'
+  GROUP BY snapshot_date, warehouse
+  ORDER BY period, warehouse NULLS LAST

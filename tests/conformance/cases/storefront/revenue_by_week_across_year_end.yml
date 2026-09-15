@@ -1,0 +1,14 @@
+id: revenue_by_week_across_year_end
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2025-12-03", end_date: "2026-01-14"}
+  time_grain: week
+# Weeks start on Monday (DuckDB date_trunc). The first and last weeks are partial: only days in
+# the range count. Week start differs between engines; see docs/failure-modes.md.
+reference_sql: |
+  SELECT date_trunc('week', order_date) AS period, SUM(amount) AS revenue
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2025-12-03' AND order_date < DATE '2026-01-15'
+  GROUP BY period
+  ORDER BY period

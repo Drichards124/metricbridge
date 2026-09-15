@@ -1,0 +1,16 @@
+id: revenue_excluding_web_and_app
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  dimensions: [channel]
+  filters:
+    - {field: channel, operator: "not in", value: [web, app]}
+# SQL semantics: NOT IN never matches a NULL channel, so lines with no channel are excluded.
+reference_sql: |
+  SELECT channel, SUM(amount) AS revenue
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2026-07-01' AND order_date < DATE '2026-10-01'
+    AND channel NOT IN ('web', 'app')
+  GROUP BY channel
+  ORDER BY channel NULLS LAST
