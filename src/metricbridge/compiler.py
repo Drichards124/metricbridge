@@ -6,8 +6,8 @@ because query text is not agent-supplied. Values travel as bound parameters, so 
 `O'Brien'; DROP TABLE` reaches the database as a string and nothing else.
 
 Three shapes, one scan. A simple metric aggregates the scan; a ratio aggregates it twice and divides
-after grouping; a snapshot ranks it and keeps one row per group before aggregating. Sharing the scan
-is what stops their bounds, joins and filters from drifting apart.
+after grouping; a snapshot keeps every row on each group's chosen date, then aggregates. Sharing
+the scan is what stops their bounds, joins and filters from drifting apart.
 
 Everything is built from typed sqlglot expressions rather than assembled strings, which is why a
 time bucket comes out as `DATE_TRUNC(col, MONTH)` on BigQuery and `dateTrunc(...)` on ClickHouse
@@ -379,7 +379,10 @@ def _compile_snapshot(
     dialect: str,
     parameters: dict[str, object],
 ) -> tuple[exp.Select, list[str]]:
-    """One row per group per period, chosen by the declared window, then aggregated.
+    """Every row on the date the declared window chooses per period and grouping, aggregated.
+
+    The choice is made per window-grouping entity (a product), not per requested cut (a warehouse):
+    the cut groups the chosen rows afterwards.
 
     Summing a snapshot across time counts the same stock once per period. The declaration says which
     snapshot stands for the period, so the roll-up is the author's rather than a guess.
@@ -417,15 +420,18 @@ def _compile_snapshot(
             default=exp.Literal.number(0),
         )
         inner.append(exp.alias_(unmatched, f"{entity}__unmatched"))
-    window = exp.Window(
-        this=exp.RowNumber(),
-        partition_by=partition_by,
-        order=exp.Order(
-            expressions=[exp.Ordered(this=snapshot_column, desc=declared.window_choice == "max")]
-        ),
+    # Every row on the chosen date is kept, not one: several warehouses can hold a product that day,
+    # and ROW_NUMBER would drop all but an engine-chosen one. MAX and MIN ignore NULLs on every
+    # engine, where RANK would depend on each engine's null ordering.
+    choice = exp.Max if declared.window_choice == "max" else exp.Min
+    window = exp.Window(this=choice(this=snapshot_column), partition_by=partition_by)
+    on_chosen_date = exp.EQ(this=snapshot_column, expression=window)
+    flag = exp.Case(
+        ifs=[exp.If(this=on_chosen_date, true=exp.Literal.number(1))],
+        default=exp.Literal.number(0),
     )
-    inner.append(exp.alias_(window, "position"))
-    ranked = _apply(exp.select(*inner), manifest, scan)
+    inner.append(exp.alias_(flag, "chosen"))
+    snapshots = _apply(exp.select(*inner), manifest, scan)
 
     outer: list[exp.Expression] = [exp.column(key) for key in keys]
     outer.append(
@@ -433,19 +439,15 @@ def _compile_snapshot(
     )
     columns = [*keys, resolved.metric.name]
 
-    query = (
-        exp.select(*outer)
-        .from_("ranked")
-        .where(exp.EQ(this=exp.column("position"), expression=exp.Literal.number(1)))
-    )
+    chosen = exp.EQ(this=exp.column("chosen"), expression=exp.Literal.number(1))
+    query = exp.select(*outer).from_("snapshots").where(chosen)
     if keys:
         query = query.group_by(*[exp.column(key) for key in keys])
     if not scan.joins:
-        return query.with_("ranked", as_=ranked), columns
+        return query.with_("snapshots", as_=snapshots), columns
 
     # The totals read only the rows chosen as each period's snapshot: those are what the answer
     # adds up, and a mid-month snapshot of an unknown product is not month-end stock.
-    chosen = exp.EQ(this=exp.column("position"), expression=exp.Literal.number(1))
     totals_projections: list[exp.Expression] = []
     total_columns: list[str] = []
     for entity in sorted(scan.joins):
@@ -461,8 +463,8 @@ def _compile_snapshot(
             exp.alias_(_AGGREGATES[measure.agg](this=value), f"{entity}__unreconciled_value"),
         ]
         total_columns += [f"{entity}{suffix}" for suffix in UNRECONCILED_SUFFIXES]
-    totals = exp.select(*totals_projections).from_("ranked").where(chosen)
-    return _with_totals(query.with_("ranked", as_=ranked), columns, totals, total_columns)
+    totals = exp.select(*totals_projections).from_("snapshots").where(chosen)
+    return _with_totals(query.with_("snapshots", as_=snapshots), columns, totals, total_columns)
 
 
 def _interval(count: int, granularity: str) -> exp.Expression:

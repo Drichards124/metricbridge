@@ -91,3 +91,11 @@ All notable changes to MetricBridge are documented here. The format follows
 - Manifests are validated when loaded. Every problem is reported at once with its file and field
   path, including unknown keys, many-to-many joins, missing partition dimensions and features not
   supported in this version.
+
+### Fixed
+
+- Snapshot metrics with a declared roll-up (such as month-end stock) now count every row on the
+  chosen day. When a product was held in several warehouses on its last snapshot day, only one of
+  those rows was counted, so the figure read low and could differ between engines. The day is still
+  chosen per window grouping (per product); a requested cut such as `warehouse` groups the counted
+  rows and does not change which day is chosen.
