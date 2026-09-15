@@ -1,0 +1,7 @@
+id: revenue_cut_by_warehouse
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  dimensions: [warehouse]
+refusal: unknown_dimension

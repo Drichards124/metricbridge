@@ -1,0 +1,8 @@
+id: net_revenue_cut_two_joins_away
+catalog: tpch
+request:
+  metric: net_revenue
+  date_range: {start_date: "1995-01-01", end_date: "1995-12-31"}
+  dimensions: [customer__market_segment]
+# lineitem -> orders -> customer is two joins: only cuts one join away are authorised.
+refusal: unknown_dimension

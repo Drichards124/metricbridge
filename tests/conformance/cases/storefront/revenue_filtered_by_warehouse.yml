@@ -1,0 +1,8 @@
+id: revenue_filtered_by_warehouse
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  filters:
+    - {field: warehouse, operator: "=", value: north}
+refusal: unknown_filter_field

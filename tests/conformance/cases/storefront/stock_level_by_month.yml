@@ -1,0 +1,7 @@
+id: stock_level_by_month
+catalog: storefront
+request:
+  metric: stock_level
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  time_grain: month
+refusal: non_additive_cut

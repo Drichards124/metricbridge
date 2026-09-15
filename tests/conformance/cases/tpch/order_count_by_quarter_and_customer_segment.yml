@@ -1,0 +1,16 @@
+id: order_count_by_quarter_and_customer_segment
+catalog: tpch
+request:
+  metric: order_count
+  date_range: {start_date: "1996-01-01", end_date: "1996-12-31"}
+  dimensions: [customer__market_segment]
+  time_grain: quarter
+# order_count: orders placed, by order date, cut by the ordering customer's segment.
+reference_sql: |
+  SELECT date_trunc('quarter', o.o_orderdate) AS period, c.c_mktsegment AS customer__market_segment,
+    COUNT(o.o_orderkey) AS order_count
+  FROM tpch.orders o
+  LEFT JOIN tpch.customer c ON o.o_custkey = c.c_custkey
+  WHERE o.o_orderdate >= DATE '1996-01-01' AND o.o_orderdate < DATE '1997-01-01'
+  GROUP BY period, c.c_mktsegment
+  ORDER BY period, c.c_mktsegment NULLS LAST

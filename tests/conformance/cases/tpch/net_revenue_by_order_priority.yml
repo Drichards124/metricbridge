@@ -1,0 +1,17 @@
+id: net_revenue_by_order_priority
+catalog: tpch
+request:
+  metric: net_revenue
+  date_range: {start_date: "1995-01-01", end_date: "1995-12-31"}
+  dimensions: [sales_order__order_priority]
+# A cut through a join to orders, a model with its own partition column. The line's ship date
+# bounds the answer; the order's own date does not.
+reference_sql: |
+  SELECT o.o_orderpriority AS sales_order__order_priority,
+    SUM(l.l_extendedprice * (1 - l.l_discount)) AS net_revenue
+  FROM tpch.lineitem l
+  LEFT JOIN tpch.orders o ON l.l_orderkey = o.o_orderkey
+  WHERE l.l_shipdate >= DATE '1995-01-01' AND l.l_shipdate < DATE '1996-01-01'
+  GROUP BY o.o_orderpriority
+  ORDER BY o.o_orderpriority NULLS LAST
+known_divergence: A cut the signature offers that the guardrail refuses

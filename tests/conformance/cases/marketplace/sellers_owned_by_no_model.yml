@@ -1,0 +1,7 @@
+id: sellers_owned_by_no_model
+catalog: marketplace_unowned
+request:
+  metric: gmv
+  date_range: {start_date: "2026-01-01", end_date: "2026-09-30"}
+# Items and reviews both carry a seller and nothing owns sellers: refused when the manifest loads.
+manifest_refusal_message: many-to-many

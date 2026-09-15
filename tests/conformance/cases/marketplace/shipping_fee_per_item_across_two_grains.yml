@@ -1,0 +1,7 @@
+id: shipping_fee_per_item_across_two_grains
+catalog: marketplace
+request:
+  metric: shipping_fee_per_item
+  date_range: {start_date: "2026-01-01", end_date: "2026-09-30"}
+# Fan trap: the fee is once per order; over item rows it would count once per item.
+refusal: unsupported_metric_shape

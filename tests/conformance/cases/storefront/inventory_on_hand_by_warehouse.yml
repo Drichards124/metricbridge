@@ -1,0 +1,21 @@
+id: inventory_on_hand_by_warehouse
+catalog: storefront
+request:
+  metric: inventory_on_hand
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  dimensions: [warehouse]
+# No grain: the period is the whole range. The choice is made per product (window_groupings):
+# each product's last snapshot day in the range, every row on that day, then grouped by warehouse.
+reference_sql: |
+  WITH scoped AS (
+    SELECT warehouse, product_id, snapshot_date, units,
+      MAX(snapshot_date) OVER (PARTITION BY product_id) AS chosen
+    FROM warehouse.fct_inventory_daily
+    WHERE snapshot_date >= DATE '2026-07-01' AND snapshot_date < DATE '2026-10-01'
+  )
+  SELECT warehouse, SUM(units) AS inventory_on_hand
+  FROM scoped
+  WHERE snapshot_date = chosen
+  GROUP BY warehouse
+  ORDER BY warehouse NULLS LAST
+known_divergence: Snapshot keeps one row on the chosen day

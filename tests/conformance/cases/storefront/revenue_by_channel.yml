@@ -1,0 +1,13 @@
+id: revenue_by_channel
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  dimensions: [channel]
+# revenue: sum of amount over order lines, business date within the range.
+reference_sql: |
+  SELECT channel, SUM(amount) AS revenue
+  FROM storefront.fct_order_lines
+  WHERE order_date BETWEEN DATE '2026-07-01' AND DATE '2026-09-30'
+  GROUP BY channel
+  ORDER BY channel NULLS LAST

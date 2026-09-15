@@ -1,0 +1,13 @@
+id: gross_revenue_by_channel
+catalog: storefront
+request:
+  metric: gross_revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  dimensions: [channel]
+# A deprecated metric still answers (with a notice naming revenue).
+reference_sql: |
+  SELECT channel, SUM(amount) AS gross_revenue
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2026-07-01' AND order_date < DATE '2026-10-01'
+  GROUP BY channel
+  ORDER BY channel NULLS LAST

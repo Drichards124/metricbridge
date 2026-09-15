@@ -1,0 +1,6 @@
+id: revenue_without_a_date_range
+catalog: storefront
+request:
+  metric: revenue
+  dimensions: [channel]
+refusal: missing_partition_filter

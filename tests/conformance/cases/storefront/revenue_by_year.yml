@@ -1,0 +1,12 @@
+id: revenue_by_year
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2025-06-01", end_date: "2026-06-30"}
+  time_grain: year
+reference_sql: |
+  SELECT date_trunc('year', order_date) AS period, SUM(amount) AS revenue
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2025-06-01' AND order_date < DATE '2026-07-01'
+  GROUP BY period
+  ORDER BY period

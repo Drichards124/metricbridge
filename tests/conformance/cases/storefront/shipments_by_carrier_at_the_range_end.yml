@@ -1,0 +1,14 @@
+id: shipments_by_carrier_at_the_range_end
+catalog: storefront
+request:
+  metric: shipments
+  date_range: {start_date: "2026-09-28", end_date: "2026-09-30"}
+  dimensions: [carrier]
+# Shipped on the last days of the range but loaded up to three days later (the declared lag):
+# they still count.
+reference_sql: |
+  SELECT carrier, COUNT(shipment_id) AS shipments
+  FROM logistics.fct_shipments
+  WHERE shipped_date >= DATE '2026-09-28' AND shipped_date < DATE '2026-10-01'
+  GROUP BY carrier
+  ORDER BY carrier NULLS LAST

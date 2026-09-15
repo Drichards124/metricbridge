@@ -1,0 +1,14 @@
+id: shipping_fees_by_buyer_region
+catalog: marketplace
+request:
+  metric: shipping_fees
+  date_range: {start_date: "2026-01-01", end_date: "2026-09-30"}
+  dimensions: [buyer__region]
+# Each order's fee once: orders join to buyers, never to items.
+reference_sql: |
+  SELECT b.region AS buyer__region, SUM(o.shipping_fee) AS shipping_fees
+  FROM marketplace.fct_orders o
+  LEFT JOIN marketplace.dim_buyers b ON o.buyer_id = b.buyer_id
+  WHERE o.ordered_date >= DATE '2026-01-01' AND o.ordered_date < DATE '2026-10-01'
+  GROUP BY b.region
+  ORDER BY b.region NULLS LAST

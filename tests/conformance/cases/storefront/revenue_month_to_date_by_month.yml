@@ -1,0 +1,14 @@
+id: revenue_month_to_date_by_month
+catalog: storefront
+request:
+  metric: revenue_month_to_date
+  date_range: {start_date: "2026-01-01", end_date: "2026-06-30"}
+  time_grain: month
+# At month grain, month-to-date as of each month's end is that month's revenue. March 2026 has
+# none, and nothing earlier falls in its window, so it has no row.
+reference_sql: |
+  SELECT date_trunc('month', revenue_date) AS period, SUM(amount) AS revenue_month_to_date
+  FROM billing.fct_subscription_revenue_daily
+  WHERE revenue_date >= DATE '2026-01-01' AND revenue_date < DATE '2026-07-01'
+  GROUP BY period
+  ORDER BY period

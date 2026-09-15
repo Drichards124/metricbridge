@@ -1,0 +1,19 @@
+id: trailing_12m_revenue_by_quarter
+catalog: storefront
+request:
+  metric: trailing_12m_revenue
+  date_range: {start_date: "2025-10-01", end_date: "2026-09-30"}
+  time_grain: quarter
+# For each quarter, the twelve months ending with the quarter's last day.
+reference_sql: |
+  WITH anchors AS (
+    SELECT CAST(generate_series AS DATE) AS period
+    FROM generate_series(DATE '2025-10-01', DATE '2026-07-01', INTERVAL 3 MONTH)
+  )
+  SELECT anchors.period, SUM(r.amount) AS trailing_12m_revenue
+  FROM anchors
+  JOIN billing.fct_subscription_revenue_daily r
+    ON r.revenue_date >= anchors.period + INTERVAL 3 MONTH - INTERVAL 12 MONTH
+   AND r.revenue_date < anchors.period + INTERVAL 3 MONTH
+  GROUP BY anchors.period
+  ORDER BY anchors.period

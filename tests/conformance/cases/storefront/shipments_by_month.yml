@@ -1,0 +1,13 @@
+id: shipments_by_month
+catalog: storefront
+request:
+  metric: shipments
+  date_range: {start_date: "2026-01-01", end_date: "2026-06-30"}
+  time_grain: month
+# shipments: counted by shipped_date (the aggregation time dimension), not by loaded_at.
+reference_sql: |
+  SELECT date_trunc('month', shipped_date) AS period, COUNT(shipment_id) AS shipments
+  FROM logistics.fct_shipments
+  WHERE shipped_date >= DATE '2026-01-01' AND shipped_date < DATE '2026-07-01'
+  GROUP BY period
+  ORDER BY period

@@ -1,0 +1,14 @@
+id: order_value_by_month_and_status
+catalog: tpch
+request:
+  metric: order_value
+  date_range: {start_date: "1995-01-01", end_date: "1995-06-30"}
+  dimensions: [order_status]
+  time_grain: month
+reference_sql: |
+  SELECT date_trunc('month', o_orderdate) AS period, o_orderstatus AS order_status,
+    SUM(o_totalprice) AS order_value
+  FROM tpch.orders
+  WHERE o_orderdate >= DATE '1995-01-01' AND o_orderdate < DATE '1995-07-01'
+  GROUP BY period, o_orderstatus
+  ORDER BY period, o_orderstatus NULLS LAST

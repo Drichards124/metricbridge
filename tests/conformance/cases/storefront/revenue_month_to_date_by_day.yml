@@ -1,0 +1,20 @@
+id: revenue_month_to_date_by_day
+catalog: storefront
+request:
+  metric: revenue_month_to_date
+  date_range: {start_date: "2026-09-01", end_date: "2026-09-10"}
+  time_grain: day
+# revenue_month_to_date: for each day, recognised revenue from the first of its month to that day.
+reference_sql: |
+  WITH anchors AS (
+    SELECT CAST(generate_series AS DATE) AS period
+    FROM generate_series(DATE '2026-09-01', DATE '2026-09-10', INTERVAL 1 DAY)
+  )
+  SELECT anchors.period, SUM(r.amount) AS revenue_month_to_date
+  FROM anchors
+  JOIN billing.fct_subscription_revenue_daily r
+    ON r.revenue_date >= date_trunc('month', anchors.period)
+   AND r.revenue_date < anchors.period + INTERVAL 1 DAY
+  GROUP BY anchors.period
+  ORDER BY anchors.period
+known_divergence: Grain-to-date window starts at the period

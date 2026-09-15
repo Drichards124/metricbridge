@@ -1,0 +1,30 @@
+# Items and reviews both carry a seller, and no model owns sellers: joining them would fan out.
+semantic_models:
+  - name: order_items
+    table: marketplace.fct_order_items
+    description: One row per item sold.
+    entities:
+      - {name: seller, type: foreign, expr: seller_id}
+    dimensions:
+      - {name: sold_date, type: time, time_granularity: day, is_partition: true}
+    measures:
+      - {name: gmv, agg: sum, expr: price}
+
+  - name: reviews
+    table: marketplace.fct_reviews
+    description: One row per seller review.
+    entities:
+      - {name: seller, type: foreign, expr: seller_id}
+    dimensions:
+      - {name: reviewed_date, type: time, time_granularity: day, is_partition: true}
+    measures:
+      - {name: review_count, agg: count, expr: review_id}
+
+metrics:
+  - name: gmv
+    type: simple
+    measure: gmv
+    description: Gross merchandise value of items sold.
+    tier: certified
+    owner: marketplace
+    domain: sales

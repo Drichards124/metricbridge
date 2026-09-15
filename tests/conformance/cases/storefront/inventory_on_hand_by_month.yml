@@ -1,0 +1,21 @@
+id: inventory_on_hand_by_month
+catalog: storefront
+request:
+  metric: inventory_on_hand
+  date_range: {start_date: "2026-01-01", end_date: "2026-09-30"}
+  time_grain: month
+# inventory_on_hand: per product (window_groupings), the rows on that product's last snapshot day
+# in the period (window_choice max), summed. Every warehouse row on that day counts.
+reference_sql: |
+  WITH scoped AS (
+    SELECT date_trunc('month', snapshot_date) AS period, product_id, snapshot_date, units,
+      MAX(snapshot_date) OVER (PARTITION BY date_trunc('month', snapshot_date), product_id) AS chosen
+    FROM warehouse.fct_inventory_daily
+    WHERE snapshot_date >= DATE '2026-01-01' AND snapshot_date < DATE '2026-10-01'
+  )
+  SELECT period, SUM(units) AS inventory_on_hand
+  FROM scoped
+  WHERE snapshot_date = chosen
+  GROUP BY period
+  ORDER BY period
+known_divergence: Snapshot keeps one row on the chosen day

@@ -1,0 +1,6 @@
+id: bookings_is_not_a_metric
+catalog: storefront
+request:
+  metric: bookings
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+refusal: unknown_metric

@@ -1,0 +1,23 @@
+id: online_takings_ratio_by_month
+catalog: storefront
+request:
+  metric: online_takings_ratio
+  date_range: {start_date: "2025-06-01", end_date: "2025-10-31"}
+  time_grain: month
+# online_takings_ratio: web_revenue (channel = web) over order_count (every channel). The halves
+# read different rows; each is aggregated per month, then divided. August 2025 has no orders.
+reference_sql: |
+  WITH checkouts AS (
+    SELECT date_trunc('month', order_date) AS period, COUNT(DISTINCT order_id) AS order_count
+    FROM storefront.fct_order_lines
+    WHERE order_date >= DATE '2025-06-01' AND order_date < DATE '2025-11-01'
+    GROUP BY period
+  ), takings AS (
+    SELECT date_trunc('month', order_date) AS period, SUM(amount) AS web_revenue
+    FROM storefront.fct_order_lines
+    WHERE order_date >= DATE '2025-06-01' AND order_date < DATE '2025-11-01' AND channel = 'web'
+    GROUP BY period
+  )
+  SELECT checkouts.period, takings.web_revenue / checkouts.order_count AS online_takings_ratio
+  FROM checkouts LEFT JOIN takings ON checkouts.period = takings.period
+  ORDER BY checkouts.period

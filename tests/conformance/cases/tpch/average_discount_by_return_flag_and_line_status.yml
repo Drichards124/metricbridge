@@ -1,0 +1,13 @@
+id: average_discount_by_return_flag_and_line_status
+catalog: tpch
+request:
+  metric: average_discount
+  date_range: {start_date: "1995-01-01", end_date: "1995-12-31"}
+  dimensions: [return_flag, line_status]
+reference_sql: |
+  SELECT l_returnflag AS return_flag, l_linestatus AS line_status,
+    AVG(l_discount) AS average_discount
+  FROM tpch.lineitem
+  WHERE l_shipdate >= DATE '1995-01-01' AND l_shipdate < DATE '1996-01-01'
+  GROUP BY l_returnflag, l_linestatus
+  ORDER BY l_returnflag NULLS LAST, l_linestatus NULLS LAST

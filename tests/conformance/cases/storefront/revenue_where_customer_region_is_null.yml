@@ -1,0 +1,17 @@
+id: revenue_where_customer_region_is_null
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2026-07-01", end_date: "2026-09-30"}
+  dimensions: [channel]
+  filters:
+    - {field: customer__region, operator: "is null"}
+# Over a LEFT join, a line with no customer or an unknown customer has a NULL region too.
+reference_sql: |
+  SELECT o.channel, SUM(o.amount) AS revenue
+  FROM storefront.fct_order_lines o
+  LEFT JOIN storefront.dim_customers c ON o.customer_id = c.customer_id
+  WHERE o.order_date >= DATE '2026-07-01' AND o.order_date < DATE '2026-10-01'
+    AND c.region IS NULL
+  GROUP BY o.channel
+  ORDER BY o.channel NULLS LAST

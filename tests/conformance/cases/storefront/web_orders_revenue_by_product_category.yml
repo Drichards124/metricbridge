@@ -1,0 +1,16 @@
+id: web_orders_revenue_by_product_category
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2026-01-01", end_date: "2026-06-30"}
+  dimensions: [product__category]
+  filters:
+    - {field: channel, operator: "=", value: web}
+reference_sql: |
+  SELECT p.category AS product__category, SUM(o.amount) AS revenue
+  FROM storefront.fct_order_lines o
+  LEFT JOIN storefront.dim_products p ON o.product_id = p.product_id
+  WHERE o.order_date >= DATE '2026-01-01' AND o.order_date < DATE '2026-07-01'
+    AND o.channel = 'web'
+  GROUP BY p.category
+  ORDER BY p.category NULLS LAST

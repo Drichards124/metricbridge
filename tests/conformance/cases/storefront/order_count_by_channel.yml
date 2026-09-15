@@ -1,0 +1,13 @@
+id: order_count_by_channel
+catalog: storefront
+request:
+  metric: order_count
+  date_range: {start_date: "2025-01-01", end_date: "2025-12-31"}
+  dimensions: [channel]
+# order_count: distinct order_id, not order lines.
+reference_sql: |
+  SELECT channel, COUNT(DISTINCT order_id) AS order_count
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01'
+  GROUP BY channel
+  ORDER BY channel NULLS LAST

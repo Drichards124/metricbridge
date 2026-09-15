@@ -1,0 +1,16 @@
+id: revenue_by_month_channel_and_customer_region
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2026-04-01", end_date: "2026-06-30"}
+  dimensions: [channel, customer__region]
+  time_grain: month
+# Group keys in order: the period, then the dimensions as requested.
+reference_sql: |
+  SELECT date_trunc('month', o.order_date) AS period, o.channel, c.region AS customer__region,
+    SUM(o.amount) AS revenue
+  FROM storefront.fct_order_lines o
+  LEFT JOIN storefront.dim_customers c ON o.customer_id = c.customer_id
+  WHERE o.order_date >= DATE '2026-04-01' AND o.order_date < DATE '2026-07-01'
+  GROUP BY period, o.channel, c.region
+  ORDER BY period, o.channel NULLS LAST, c.region NULLS LAST

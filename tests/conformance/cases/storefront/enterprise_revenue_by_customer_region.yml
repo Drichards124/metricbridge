@@ -1,0 +1,16 @@
+id: enterprise_revenue_by_customer_region
+catalog: storefront
+request:
+  metric: enterprise_revenue
+  date_range: {start_date: "2025-01-01", end_date: "2026-09-30"}
+  dimensions: [customer__region]
+# enterprise_revenue: revenue from customers whose segment is enterprise or strategic. A line with
+# no known customer has no segment, so it never qualifies.
+reference_sql: |
+  SELECT c.region AS customer__region, SUM(o.amount) AS enterprise_revenue
+  FROM storefront.fct_order_lines o
+  LEFT JOIN storefront.dim_customers c ON o.customer_id = c.customer_id
+  WHERE o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-10-01'
+    AND c.segment IN ('enterprise', 'strategic')
+  GROUP BY c.region
+  ORDER BY c.region NULLS LAST

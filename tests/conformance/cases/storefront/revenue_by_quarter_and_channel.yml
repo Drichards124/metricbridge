@@ -1,0 +1,13 @@
+id: revenue_by_quarter_and_channel
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2025-01-01", end_date: "2025-12-31"}
+  dimensions: [channel]
+  time_grain: quarter
+reference_sql: |
+  SELECT date_trunc('quarter', order_date) AS period, channel, SUM(amount) AS revenue
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01'
+  GROUP BY period, channel
+  ORDER BY period, channel NULLS LAST

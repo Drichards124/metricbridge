@@ -1,0 +1,8 @@
+id: shipping_fees_cut_by_item_category
+catalog: marketplace
+request:
+  metric: shipping_fees
+  date_range: {start_date: "2026-01-01", end_date: "2026-09-30"}
+  dimensions: [item_category]
+# Fan trap as a cut: an order-level fee split by an item attribute would repeat per item.
+refusal: unknown_dimension

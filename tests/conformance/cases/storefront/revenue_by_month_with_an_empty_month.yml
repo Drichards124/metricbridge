@@ -1,0 +1,13 @@
+id: revenue_by_month_with_an_empty_month
+catalog: storefront
+request:
+  metric: revenue
+  date_range: {start_date: "2025-06-01", end_date: "2025-10-31"}
+  time_grain: month
+# August 2025 has no orders: it has no row (it is reported in missing_periods, not as zero).
+reference_sql: |
+  SELECT date_trunc('month', order_date) AS period, SUM(amount) AS revenue
+  FROM storefront.fct_order_lines
+  WHERE order_date >= DATE '2025-06-01' AND order_date < DATE '2025-11-01'
+  GROUP BY period
+  ORDER BY period

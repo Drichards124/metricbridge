@@ -1,0 +1,17 @@
+id: top_ten_part_brands_by_net_revenue
+catalog: tpch
+request:
+  metric: net_revenue
+  date_range: {start_date: "1996-01-01", end_date: "1996-12-31"}
+  dimensions: [part__brand]
+  order_by:
+    - {field: net_revenue, direction: desc}
+  row_limit: 10
+reference_sql: |
+  SELECT p.p_brand AS part__brand, SUM(l.l_extendedprice * (1 - l.l_discount)) AS net_revenue
+  FROM tpch.lineitem l
+  LEFT JOIN tpch.part p ON l.l_partkey = p.p_partkey
+  WHERE l.l_shipdate >= DATE '1996-01-01' AND l.l_shipdate < DATE '1997-01-01'
+  GROUP BY p.p_brand
+  ORDER BY net_revenue DESC NULLS LAST, p.p_brand NULLS LAST
+  LIMIT 10

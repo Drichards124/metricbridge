@@ -1,0 +1,14 @@
+id: revenue_per_order_by_ship_mode
+catalog: tpch
+request:
+  metric: revenue_per_order
+  date_range: {start_date: "1997-01-01", end_date: "1997-06-30"}
+  dimensions: [ship_mode]
+# revenue_per_order: net revenue over distinct orders shipped, each aggregated per group first.
+reference_sql: |
+  SELECT l_shipmode AS ship_mode,
+    SUM(l_extendedprice * (1 - l_discount)) / COUNT(DISTINCT l_orderkey) AS revenue_per_order
+  FROM tpch.lineitem
+  WHERE l_shipdate >= DATE '1997-01-01' AND l_shipdate < DATE '1997-07-01'
+  GROUP BY l_shipmode
+  ORDER BY l_shipmode NULLS LAST
