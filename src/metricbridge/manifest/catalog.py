@@ -65,6 +65,10 @@ def dimension_catalog(
     for join in joins:
         if join.from_model != base.name:
             continue
+        # A joined table with its own partition column cannot be bounded on its own date without
+        # dropping matching rows, and the guardrail refuses it unbounded: its cuts are not offered.
+        if models[join.to_model].partition is not None:
+            continue
         for dimension in models[join.to_model].dimensions:
             qualified = f"{join.entity}__{dimension.name}"
             catalog[qualified] = CatalogEntry(

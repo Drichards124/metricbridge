@@ -94,3 +94,13 @@ All notable changes to MetricBridge are documented here. The format follows
 - Manifests are validated when loaded. Every problem is reported at once with its file and field
   path, including unknown keys, many-to-many joins, missing partition dimensions and features not
   supported in this version.
+
+### Fixed
+
+- A dimension reached through a join to a semantic model that has its own partition dimension (for
+  example an order's priority, cut from order lines) is no longer listed by `get_metric_signature`.
+  Every such request was refused with `guardrail_violation`, so the cut could never be answered.
+  Requesting it now returns `unknown_dimension`, and filtering on it returns
+  `unknown_filter_field`, both with the cuts that are available. A metric whose own `filters` name
+  such a dimension is refused when the manifest loads. Cuts through joins to models without a
+  partition dimension are unchanged.

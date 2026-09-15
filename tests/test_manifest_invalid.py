@@ -248,6 +248,27 @@ CASES = [
     ),
     pytest.param(
         {
+            "m.yml": MINIMAL,
+            "l.yml": extra_model(
+                "order_lines",
+                """\
+                entities:
+                  - {name: line, type: primary, expr: line_id}
+                  - {name: order, type: foreign, expr: order_id}
+                dimensions:
+                  - {name: ship_date, type: time, time_granularity: day, is_partition: true}
+                measures:
+                  - {name: line_revenue, agg: sum, expr: amount}
+                """,
+            )
+            + 'metrics:\n  - {name: web_line_revenue, type: simple, measure: line_revenue, description: Web lines., filters: [{field: order__channel, operator: "=", value: web}]}\n',
+        },
+        # orders has its own partition column, so its cuts are not reachable from order lines.
+        [("l.yml", "metrics[0].filters[0].field", "not an authorised cut")],
+        id="metric-filter-through-a-join-to-a-partitioned-model",
+    ),
+    pytest.param(
+        {
             "m.yml": edit(
                 "description: Revenue.}",
                 'description: Revenue., filters: [{field: channel, operator: "~=", value: web}]}',
