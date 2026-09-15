@@ -11,14 +11,14 @@ from pathlib import Path
 import duckdb
 
 CACHE = Path(__file__).parents[2] / ".cache" / "conformance"
+SCALE = float(os.environ.get("METRICBRIDGE_TPCH_SCALE", "0.1"))  # a number before it is SQL
 
 
 @cache
 def tpch_database() -> Path:
-    scale = float(os.environ.get("METRICBRIDGE_TPCH_SCALE", "0.1"))  # a number before it is SQL
     # Not tpch.duckdb: DuckDB names the catalog after the file, which would make every
     # `tpch.<table>` reference ambiguous with the schema.
-    path = CACHE / f"tpch-sf{scale:g}.duckdb"
+    path = CACHE / f"tpch-sf{SCALE:g}.duckdb"
     if path.exists():
         return path
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -29,6 +29,6 @@ def tpch_database() -> Path:
         connection.execute("INSTALL tpch")
         connection.execute("LOAD tpch")
         connection.execute("CREATE SCHEMA tpch")
-        connection.execute(f"CALL dbgen(sf = {scale}, schema = 'tpch')")
+        connection.execute(f"CALL dbgen(sf = {SCALE}, schema = 'tpch')")
     partial.rename(path)
     return path

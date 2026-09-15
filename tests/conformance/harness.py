@@ -122,21 +122,60 @@ def compare(answer: dict, case: Case, reference: tuple[list[str], list[tuple]]) 
     columns, rows = reference
     if answer["columns"] != columns:  # cells cannot be paired, so nothing further is compared
         return [f"columns: MetricBridge {answer['columns']}, reference {columns}"]
+    if len(answer["rows"]) == len(rows):  # paired by position, so the order is compared too
+        return [
+            difference
+            for index, (got, expected) in enumerate(zip(answer["rows"], rows))
+            for difference in _cells(index, got, expected, columns)
+        ]
+    return [
+        f"row count: MetricBridge {len(answer['rows'])} rows, reference {len(rows)} rows",
+        *_by_key(answer["rows"], rows, columns, case.request.metric),
+    ]
+
+
+def _cells(index: int, got: dict, expected: tuple, columns: list[str]) -> list[str]:
     differences = []
-    if len(answer["rows"]) != len(rows):
-        differences.append(
-            f"row count: MetricBridge {len(answer['rows'])} rows, reference {len(rows)} rows"
-        )
-    for index, (got, expected) in enumerate(zip(answer["rows"], rows)):
-        for column, like in zip(columns, expected):
-            where = f"row {index}, {column}: MetricBridge {got[column]!r}, reference {like!r}"
-            try:
-                value = _read(got[column], like)
-            except (ArithmeticError, TypeError, ValueError):  # InvalidOperation is arithmetic
-                differences.append(f"{where}: not a {type(like).__name__}")
-                continue
-            if normalise(value) != normalise(like):
-                differences.append(where)
+    for column, like in zip(columns, expected):
+        where = f"row {index}, {column}: MetricBridge {got[column]!r}, reference {like!r}"
+        try:
+            value = _read(got[column], like)
+        except (ArithmeticError, TypeError, ValueError):  # InvalidOperation is arithmetic
+            differences.append(f"{where}: not a {type(like).__name__}")
+            continue
+        if normalise(value) != normalise(like):
+            differences.append(where)
+    return differences
+
+
+def _by_key(
+    answer_rows: list[dict], rows: list[tuple], columns: list[str], metric: str
+) -> list[str]:
+    """With a row on one side only, pair rows by their group keys: one gap reads as one gap, not
+    as every later row being wrong."""
+    keys = [i for i, column in enumerate(columns) if column != metric]
+    # A column's type, from the first reference row with a value in it.
+    likes = [next((row[i] for row in rows if row[i] is not None), None) for i in keys]
+
+    def label(key: tuple) -> str:
+        return ", ".join(f"{columns[i]}={value!r}" for i, value in zip(keys, key))
+
+    def answer_key(got: dict) -> tuple:
+        try:
+            return tuple(normalise(_read(got[columns[i]], like)) for i, like in zip(keys, likes))
+        except (ArithmeticError, TypeError, ValueError):
+            return tuple(got[columns[i]] for i in keys)
+
+    unmatched = {answer_key(got): (index, got) for index, got in enumerate(answer_rows)}
+    differences = []
+    for index, expected in enumerate(rows):
+        key = tuple(normalise(expected[i]) for i in keys)
+        if key not in unmatched:
+            differences.append(f"reference row {index} ({label(key)}): missing from MetricBridge")
+            continue
+        differences += _cells(index, unmatched.pop(key)[1], expected, columns)
+    for key, (index, _) in unmatched.items():
+        differences.append(f"MetricBridge row {index} ({label(key)}): not in the reference")
     return differences
 
 

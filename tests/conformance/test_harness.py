@@ -187,6 +187,24 @@ class TestCompare:
         differences = compare(ANSWER, storefront_case(tmp_path), swapped)
         assert {d.split(",")[0] for d in differences} == {"row 0", "row 1"}
 
+    def test_a_row_on_one_side_only_is_named_by_its_keys_not_shifted_onto_the_rest(self, tmp_path):
+        # A missing middle row must not read as every later row being wrong.
+        answer = {**ANSWER, "rows": [ANSWER["rows"][0], ANSWER["rows"][2]]}
+
+        assert compare(answer, storefront_case(tmp_path), REFERENCE) == [
+            "row count: MetricBridge 2 rows, reference 3 rows",
+            "reference row 1 (channel='web'): missing from MetricBridge",
+        ]
+
+    def test_a_row_only_metricbridge_returned_is_named_by_its_keys(self, tmp_path):
+        extra = {"channel": "gift", "revenue": "5.00"}
+        answer = {**ANSWER, "rows": [*ANSWER["rows"], extra]}
+
+        assert compare(answer, storefront_case(tmp_path), REFERENCE) == [
+            "row count: MetricBridge 4 rows, reference 3 rows",
+            "MetricBridge row 3 (channel='gift'): not in the reference",
+        ]
+
     @pytest.mark.parametrize("side", ["answer", "reference"])
     def test_a_skipped_row_is_a_difference(self, tmp_path, side):
         answer, (columns, rows) = ANSWER, REFERENCE
