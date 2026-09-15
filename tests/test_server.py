@@ -93,7 +93,11 @@ def test_a_metric_is_answered_end_to_end():
         {"period": "2026-09-01", "customer__region": None, "revenue": "30.00"},
     ]
     assert payload["missing_periods"] == ["2026-08-01"]
-    assert payload["null_key_rows"] == {"customer": 1}
+    assert payload["unreconciled"] == {
+        "customer": {"rows": 1, "empty_key_rows": 1, "value": "30.00"}
+    }
+    assert payload["unreconciled_window"] == {"start_date": "2026-07-01", "end_date": "2026-09-30"}
+    assert "null_key_rows" not in payload
     assert payload["row_limit_reached"] is False
 
 

@@ -52,16 +52,31 @@ class TestGoldenStatements:
             order_by=[{"field": "revenue", "direction": "desc"}],
         )
         assert flat(query.sql) == (
+            "WITH answer AS ("
             "SELECT DATE_TRUNC('MONTH', orders.order_date) AS period, "
             "customer.region AS customer__region, "
-            "SUM(orders.amount) AS revenue, "
-            "SUM(CASE WHEN orders.customer_id IS NULL THEN 1 ELSE 0 END) "
-            "AS customer__null_key_rows "
+            "SUM(orders.amount) AS revenue "
             "FROM storefront.fct_order_lines AS orders "
             "LEFT JOIN storefront.dim_customers AS customer "
             "ON orders.customer_id = customer.customer_id "
             "WHERE orders.order_date >= $start_date AND orders.order_date < $end_date "
-            "GROUP BY DATE_TRUNC('MONTH', orders.order_date), customer.region "
+            "GROUP BY DATE_TRUNC('MONTH', orders.order_date), customer.region"
+            "), totals AS ("
+            "SELECT SUM(CASE WHEN customer.customer_id IS NULL THEN 1 ELSE 0 END) "
+            "AS customer__unreconciled_rows, "
+            "SUM(CASE WHEN orders.customer_id IS NULL THEN 1 ELSE 0 END) "
+            "AS customer__empty_key_rows, "
+            "SUM(CASE WHEN customer.customer_id IS NULL THEN orders.amount END) "
+            "AS customer__unreconciled_value "
+            "FROM storefront.fct_order_lines AS orders "
+            "LEFT JOIN storefront.dim_customers AS customer "
+            "ON orders.customer_id = customer.customer_id "
+            "WHERE orders.order_date >= $start_date AND orders.order_date < $end_date"
+            ") "
+            "SELECT answer.period, answer.customer__region, answer.revenue, "
+            "totals.customer__unreconciled_rows, "
+            "totals.customer__empty_key_rows, totals.customer__unreconciled_value "
+            "FROM answer CROSS JOIN totals "
             "ORDER BY revenue DESC, period ASC, customer__region ASC "
             "LIMIT 100"
         )
@@ -80,6 +95,23 @@ class TestGoldenStatements:
         sql = flat(compiled(manifest, dialect=dialect, time_grain="month").sql)
         assert bucket in sql
         assert placeholder in sql
+
+    @pytest.mark.parametrize(
+        "dialect", ["duckdb", "postgres", "bigquery", "snowflake", "clickhouse"]
+    )
+    def test_every_dialect_carries_the_unreconciled_totals(self, manifest, dialect):
+        """Plain CASE and SUM inside a CTE: one spelling, valid on every engine. ClickHouse also
+        needs `join_use_nulls = 1` for an unmatched key to read as NULL; its 1.7 adapter sets it."""
+        sql = flat(compiled(manifest, dialect=dialect, dimensions=["customer__region"]).sql)
+        assert (
+            "totals AS (SELECT SUM(CASE WHEN customer.customer_id IS NULL THEN 1 ELSE 0 END) "
+            "AS customer__unreconciled_rows, "
+            "SUM(CASE WHEN orders.customer_id IS NULL THEN 1 ELSE 0 END) "
+            "AS customer__empty_key_rows, "
+            "SUM(CASE WHEN customer.customer_id IS NULL THEN orders.amount END) "
+            "AS customer__unreconciled_value"
+        ) in sql
+        assert "FROM answer CROSS JOIN totals" in sql
 
 
 class TestDateBounds:

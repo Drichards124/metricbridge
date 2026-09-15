@@ -26,10 +26,15 @@ All notable changes to MetricBridge are documented here. The format follows
 - `query_metric` answers a governed metric on DuckDB: `metricbridge --manifest PATH --duckdb FILE`.
   The database is opened read-only, with file access disabled.
 - Every answer states what is absent: `missing_periods` lists periods the data never produced,
-  including a trailing-window period with no rows of its own; `null_key_rows` counts rows with an
-  empty join key per joined entity — not keys that match no row in the joined table — and is
-  `null` for ratio and cumulative metrics, which do not count them yet; and `row_limit_reached` says rows were cut off, in which case neither of the other
-  two is claimed.
+  including a trailing-window period with no rows of its own, and `row_limit_reached` says rows
+  were cut off, in which case `missing_periods` is `null`.
+- `unreconciled` accounts, per joined entity, for the rows a join could not match — an empty key or
+  a key naming a row that does not exist: `rows`, `empty_key_rows`, and the metric's `value` over
+  just those rows. A ratio reports each half separately; a snapshot counts the rows it chose; a
+  trailing metric counts its whole lookback, and `unreconciled_window` gives the dates covered.
+  The totals are exact even when the row limit cuts the answer. `{}` means nothing was joined;
+  `null` means no rows came back. A filter on a joined dimension removes unmatched rows before they
+  are counted.
 - `--statement-timeout SECONDS` (default 30) stops a long-running statement with
   `statement_timeout`. A result above the row ceiling is refused with `row_cap_exceeded` rather
   than truncated, and a database error returns `execution_failed` without the driver's message.

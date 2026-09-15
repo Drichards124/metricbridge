@@ -1,6 +1,7 @@
 """Execution: the last step before the warehouse, and the first that can hang, flood or leak."""
 
 import dataclasses
+import tempfile
 import threading
 import time
 from datetime import date, timedelta
@@ -10,7 +11,7 @@ import duckdb
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from storefront_data import SCHEMA, storefront_database
+from storefront_data import CUSTOMERS, ORDER_LINES, SCHEMA, storefront_database
 
 from metricbridge.compiler import compile_query
 from metricbridge.contract import MAX_ROW_LIMIT, QueryRequest, RefusalError, validate
@@ -39,6 +40,24 @@ def answer(manifest, engine, **overrides):
     request = QueryRequest(**{"metric": "revenue", "date_range": Q3, **overrides})
     resolved = validate(manifest, request)
     return execute(manifest, resolved, compile_query(manifest, resolved, engine.dialect), engine)
+
+
+def seeded(directory: Path, *statements: str, order_lines=ORDER_LINES) -> DuckDBEngine:
+    """The storefront schema with these order lines, the usual customers, and any extra rows."""
+    path = directory / "scratch.duckdb"
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(SCHEMA)
+        if order_lines:  # DuckDB refuses executemany with no parameter sets
+            connection.executemany(
+                "INSERT INTO storefront.fct_order_lines VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                order_lines,
+            )
+        connection.executemany(
+            "INSERT INTO storefront.dim_customers VALUES (?, ?, ?, ?)", CUSTOMERS
+        )
+        for statement in statements:
+            connection.execute(statement)
+    return DuckDBEngine(path)
 
 
 def code_of(error: RefusalError) -> str:
@@ -110,16 +129,19 @@ class TestAnswers:
 
     def test_nothing_is_claimed_about_rows_the_limit_cut_off(self, manifest, engine):
         """Three groups, a limit of two: September's row exists but was not returned, so calling it
-        missing — or counting null keys from what came back — would be a false statement."""
+        missing would be a false statement. The unreconciled totals were counted before the limit,
+        so they still describe the whole answer — September's empty-key line included."""
         result = answer(
             manifest, engine, dimensions=["customer__region"], time_grain="month", row_limit=2
         )
         assert len(result["rows"]) == 2
         assert result["row_limit_reached"] is True
         assert result["missing_periods"] is None
-        assert result["null_key_rows"] is None
+        assert result["unreconciled"] == {
+            "customer": {"rows": 1, "empty_key_rows": 1, "value": "30.00"}
+        }
 
-    def test_each_join_reports_its_null_key_rows_beside_the_rows(self, manifest, engine):
+    def test_each_join_reports_its_unreconciled_rows_beside_the_rows(self, manifest, engine):
         result = answer(manifest, engine, dimensions=["customer__region"])
         assert result["columns"] == ["customer__region", "revenue"]
         assert result["rows"] == [
@@ -127,30 +149,161 @@ class TestAnswers:
             {"customer__region": "EMEA", "revenue": "150.00"},
             {"customer__region": None, "revenue": "30.00"},  # NULL sorts last
         ]
-        assert result["null_key_rows"] == {"customer": 1}
+        assert result["unreconciled"] == {
+            "customer": {"rows": 1, "empty_key_rows": 1, "value": "30.00"}
+        }
+        assert "null_key_rows" not in result
 
-    def test_a_metric_with_no_joins_has_no_null_keys(self, manifest, engine):
-        assert answer(manifest, engine)["null_key_rows"] == {}
+    def test_rows_no_joined_row_matches_are_totalled_per_entity(self, manifest, tmp_path):
+        """An empty key and a key naming a customer who does not exist both land in the blank
+        region. Both are unreconciled; the empty one is also counted apart, because it is a
+        different fix."""
+        orphan = (5, 4, 99, 1, "2026-09-15", "2026-09-15", "web", "20.00")
+        engine = seeded(tmp_path, order_lines=[*ORDER_LINES, orphan])
+        result = answer(manifest, engine, dimensions=["customer__region"])
+        assert result["rows"][-1] == {"customer__region": None, "revenue": "50.00"}
+        assert result["unreconciled"] == {
+            "customer": {"rows": 2, "empty_key_rows": 1, "value": "50.00"}
+        }
 
-    @pytest.mark.parametrize(
-        ("metric", "date_range"),
-        [
-            ("average_order_value", Q3),
-            ("trailing_12m_revenue", {"start_date": "2026-09-01", "end_date": "2026-09-30"}),
-        ],
-    )
-    def test_shapes_that_do_not_count_null_keys_say_so(self, manifest, engine, metric, date_range):
-        """`null`, not `{}`: these shapes do not count null keys yet, and silence is not zero."""
+    def test_the_row_limit_does_not_change_the_totals(self, manifest, tmp_path):
+        """The totals cover the whole scan, so a truncated answer still carries them exactly."""
+        orphan = (5, 4, 99, 1, "2026-07-15", "2026-07-15", "web", "20.00")
+        engine = seeded(tmp_path, order_lines=[*ORDER_LINES, orphan])
+        cut = {"dimensions": ["customer__region"], "time_grain": "month"}
+        whole = answer(manifest, engine, **cut)
+        truncated = answer(manifest, engine, **cut, row_limit=1)
+        assert truncated["row_limit_reached"] is True
+        assert truncated["unreconciled"] == whole["unreconciled"]
+        assert whole["unreconciled"] == {
+            "customer": {"rows": 2, "empty_key_rows": 1, "value": "50.00"}
+        }
+
+    def test_a_distinct_count_is_not_summed_across_groups(self, manifest, tmp_path):
+        """Order 3 has an empty-key line in September and an orphan line in July. Adding up the
+        monthly groups counts it twice; it is one unreconciled order."""
+        orphan = (5, 3, 99, 1, "2026-07-20", "2026-07-20", "web", "20.00")
+        engine = seeded(tmp_path, order_lines=[*ORDER_LINES, orphan])
         result = answer(
             manifest,
             engine,
-            metric=metric,
-            date_range=date_range,
+            metric="order_count",
             dimensions=["customer__region"],
             time_grain="month",
         )
-        assert result["rows"]
-        assert result["null_key_rows"] is None
+        assert result["unreconciled"] == {"customer": {"rows": 2, "empty_key_rows": 1, "value": 1}}
+
+    def test_an_average_is_taken_over_the_unmatched_rows_not_averaged_across_groups(
+        self, manifest, tmp_path
+    ):
+        """£30 in September (empty key) and £20 and £10 in July (unknown customers) average to
+        £20. Averaging the monthly averages would say £22.50."""
+        orphans = [
+            (5, 4, 99, 1, "2026-07-15", "2026-07-15", "web", "20.00"),
+            (6, 5, 98, 1, "2026-07-16", "2026-07-16", "web", "10.00"),
+        ]
+        engine = seeded(tmp_path, order_lines=[*ORDER_LINES, *orphans])
+        result = answer(
+            manifest,
+            engine,
+            metric="average_line_value",
+            dimensions=["customer__region"],
+            time_grain="month",
+        )
+        assert result["unreconciled"] == {
+            "customer": {"rows": 3, "empty_key_rows": 1, "value": 20.0}
+        }
+
+    def test_a_trailing_total_accounts_for_its_whole_lookback(self, manifest, tmp_path):
+        """September's trailing twelve months are built from October 2025 onward, so an unknown
+        customer's £50 in March shapes the answer and is counted, and the window says so."""
+        engine = seeded(
+            tmp_path,
+            "INSERT INTO billing.fct_subscription_revenue_daily VALUES "
+            + ", ".join(f"('2026-{month:02d}-01', 100, 1, 1)" for month in range(1, 10)),
+            "INSERT INTO billing.fct_subscription_revenue_daily VALUES "
+            "('2026-03-01', 50, 2, 99), ('2026-09-01', 25, 3, NULL)",
+        )
+        result = answer(
+            manifest,
+            engine,
+            metric="trailing_12m_revenue",
+            date_range={"start_date": "2026-09-01", "end_date": "2026-09-30"},
+            dimensions=["customer__region"],
+            time_grain="month",
+        )
+        assert result["rows"] == [
+            {"period": "2026-09-01", "customer__region": "EMEA", "trailing_12m_revenue": 900},
+            {"period": "2026-09-01", "customer__region": None, "trailing_12m_revenue": 75},
+        ]
+        assert result["unreconciled"] == {"customer": {"rows": 2, "empty_key_rows": 1, "value": 75}}
+        assert result["unreconciled_window"] == {
+            "start_date": "2025-10-01",
+            "end_date": "2026-09-30",
+        }
+
+    def test_each_half_of_a_ratio_accounts_for_the_rows_it_read(self, manifest, tmp_path):
+        """Web revenue over all orders: the numerator reads web lines only, so the empty-key line
+        (no channel) is not in it, while the denominator counts every order. One `rows` for the
+        ratio would be true of one half and false of the other."""
+        orphan = (5, 4, 99, 1, "2026-09-15", "2026-09-15", "web", "20.00")
+        engine = seeded(tmp_path, order_lines=[*ORDER_LINES, orphan])
+        result = answer(
+            manifest, engine, metric="online_takings_ratio", dimensions=["customer__region"]
+        )
+        assert result["unreconciled"] == {
+            "customer": {
+                "numerator": {"rows": 1, "empty_key_rows": 0, "value": "20.00"},
+                "denominator": {"rows": 2, "empty_key_rows": 1, "value": 2},
+            }
+        }
+
+    def test_a_snapshot_counts_only_the_rows_it_chose(self, manifest, tmp_path):
+        """Month-end stock reads the last snapshot per product. Product 99 does not exist and one
+        row has no product; the 100 units product 99 held on 10 July are not month-end stock."""
+        engine = seeded(
+            tmp_path,
+            "INSERT INTO storefront.dim_products VALUES (1, 'toys', 'EU')",
+            "INSERT INTO warehouse.fct_inventory_daily VALUES "
+            "(1, '2026-07-01', 'north', 5), (1, '2026-07-31', 'north', 7), "
+            "(99, '2026-07-10', 'north', 100), (99, '2026-07-31', 'north', 3), "
+            "(NULL, '2026-07-31', 'north', 2)",
+        )
+        result = answer(
+            manifest,
+            engine,
+            metric="inventory_on_hand",
+            date_range={"start_date": "2026-07-01", "end_date": "2026-07-31"},
+            dimensions=["product__category"],
+            time_grain="month",
+        )
+        assert result["rows"] == [
+            {"period": "2026-07-01", "product__category": "toys", "inventory_on_hand": 7},
+            {"period": "2026-07-01", "product__category": None, "inventory_on_hand": 5},
+        ]
+        assert result["unreconciled"] == {"product": {"rows": 2, "empty_key_rows": 1, "value": 5}}
+
+    def test_a_metric_with_no_joins_has_nothing_to_reconcile(self, manifest, engine):
+        """`{}`: nothing was joined, so no row can have failed to match."""
+        result = answer(manifest, engine)
+        assert result["unreconciled"] == {}
+        assert result["unreconciled_window"] == {
+            "start_date": "2026-07-01",
+            "end_date": "2026-09-30",
+        }
+
+    def test_an_answer_with_no_rows_claims_nothing(self, manifest, engine):
+        """`null`, not zeros: with no row to carry the totals, nothing was counted. January has no
+        orders in the seed."""
+        result = answer(
+            manifest,
+            engine,
+            date_range={"start_date": "2026-01-01", "end_date": "2026-01-31"},
+            dimensions=["customer__region"],
+        )
+        assert result["rows"] == []
+        assert result["unreconciled"] is None
+        assert result["unreconciled_window"] is None
 
 
 class TestTheConnection:
@@ -288,3 +441,42 @@ def test_every_expected_period_is_returned_or_reported_missing(manifest, days, g
         missing = set(result["missing_periods"])
         assert returned | missing == expected
         assert not returned & missing
+
+
+# Customers 1 and 2 exist; 98 and 99 do not; None is an empty key.
+KEYS = st.sampled_from([1, 2, 98, 99, None])
+
+
+@settings(max_examples=40, deadline=None)
+@given(
+    lines=st.lists(
+        st.tuples(KEYS, st.integers(min_value=0, max_value=91), st.integers(0, 50_000)),
+        max_size=12,
+    ),
+    row_limit=st.integers(min_value=1, max_value=5),
+)
+def test_unreconciled_totals_match_a_recount_whatever_the_limit(manifest, lines, row_limit):
+    """Over any mix of matched, empty and unknown keys, the totals equal a plain recount of the
+    lines — and a limit that cuts the answer changes nothing about them."""
+    order_lines = [
+        (n, n, key, 1, date(2026, 7, 1) + timedelta(days=day), None, "web", f"{pence / 100:.2f}")
+        for n, (key, day, pence) in enumerate(lines)
+    ]
+    unmatched = [(key, pence) for key, _, pence in lines if key not in (1, 2)]
+    expected = {
+        "customer": {
+            "rows": len(unmatched),
+            "empty_key_rows": sum(1 for key, _ in unmatched if key is None),
+            "value": f"{sum(p for _, p in unmatched) / 100:.2f}" if unmatched else None,
+        }
+    }
+    with tempfile.TemporaryDirectory() as directory:
+        engine = seeded(Path(directory), order_lines=order_lines)
+        cut = {"dimensions": ["customer__region"], "time_grain": "month"}
+        whole = answer(manifest, engine, **cut)
+        limited = answer(manifest, engine, **cut, row_limit=row_limit)
+    if not lines:
+        assert whole["unreconciled"] is None
+        return
+    assert whole["unreconciled"] == expected
+    assert limited["unreconciled"] == expected

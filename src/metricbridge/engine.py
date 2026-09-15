@@ -5,26 +5,25 @@ What is left is what a warehouse can still do wrong to an agent: run forever, re
 anyone asked for, or say something in an error message that was never meant to leave it.
 
 The answer is shaped so that an absence says so. A period the data never produced is listed, not
-left as a gap; a row whose join key is empty is counted; and when the row limit cut the answer off,
-nothing is claimed about the rows that did not come back.
+left as a gap; rows no joined row matched are accounted for over the whole scan, so the row limit
+cannot change the totals; and when the limit cut the answer off, no period is called missing.
 """
 
 import logging
 import threading
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol
 
 import duckdb
 
-from .compiler import CompiledQuery
+from .compiler import UNRECONCILED_SUFFIXES, CompiledQuery
 from .contract import MAX_ROW_LIMIT, Refusal, RefusalError, Resolved
 from .guardrail import assert_safe
 from .manifest import SemanticManifest
 
 EXECUTION_CODES = frozenset({"statement_timeout", "row_cap_exceeded", "execution_failed"})
-NULL_KEY_SUFFIX = "__null_key_rows"
 
 log = logging.getLogger(__name__)
 
@@ -116,27 +115,46 @@ def execute(
     assert_safe(query.sql, manifest, dialect=engine.dialect)  # immediately before, never after
     raw = engine.execute(query.sql, query.parameters)
     rows = [dict(zip(query.columns, row, strict=True)) for row in raw]
-    columns = [c for c in query.columns if not c.endswith(NULL_KEY_SUFFIX)]
+    columns = [c for c in query.columns if not c.endswith(UNRECONCILED_SUFFIXES)]
     limited = len(rows) >= resolved.row_limit
 
+    # Totals over the whole scan ride on every row, so the limit cannot change them. With no row to
+    # carry them, nothing is claimed.
+    unreconciled = None
+    unreconciled_window = None
+    if rows:
+        start, end_exclusive = query.scan_window
+        unreconciled_window = {
+            "start_date": start.isoformat(),
+            "end_date": (end_exclusive - timedelta(days=1)).isoformat(),
+        }
+        first = rows[0]
+        unreconciled = {}
+        for column in query.columns:
+            if not column.endswith("__unreconciled_rows"):
+                continue
+            stem = column.removesuffix("__unreconciled_rows")
+            breakdown = {
+                "rows": first[column] or 0,
+                "empty_key_rows": first[f"{stem}__empty_key_rows"] or 0,
+                "value": _normalise(column, first[f"{stem}__unreconciled_value"]),
+            }
+            if resolved.metric.type == "ratio":  # one breakdown per half: `customer__numerator`
+                entity, side = stem.rsplit("__", 1)
+                unreconciled.setdefault(entity, {})[side] = breakdown
+            else:
+                unreconciled[stem] = breakdown
+
     missing_periods = None
-    null_key_rows = None
     if not limited:
         returned = {_as_date(row["period"]) for row in rows} if "period" in columns else set()
         missing_periods = [p.isoformat() for p in query.expected_periods if p not in returned]
-        # Ratio and cumulative shapes do not count null keys yet: `null`, because `{}` reads as
-        # "none found".
-        if resolved.metric.type == "simple":
-            null_key_rows = {
-                c.removesuffix(NULL_KEY_SUFFIX): sum(row[c] or 0 for row in rows)
-                for c in query.columns
-                if c.endswith(NULL_KEY_SUFFIX)
-            }
 
     return {
         "columns": columns,
         "rows": [{c: _normalise(c, row[c]) for c in columns} for row in rows],
         "row_limit_reached": limited,
         "missing_periods": missing_periods,
-        "null_key_rows": null_key_rows,
+        "unreconciled": unreconciled,
+        "unreconciled_window": unreconciled_window,
     }

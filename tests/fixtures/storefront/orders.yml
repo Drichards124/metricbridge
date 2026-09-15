@@ -13,6 +13,7 @@ semantic_models:
     measures:
       - {name: revenue, agg: sum, expr: amount}
       - {name: order_count, agg: count_distinct, expr: order_id}
+      - {name: average_line_amount, agg: average, expr: amount}
 
   - name: customers
     table: storefront.dim_customers
@@ -43,6 +44,14 @@ metrics:
     owner: finance
     domain: sales
 
+  - name: average_line_value
+    type: simple
+    measure: average_line_amount
+    description: Average amount per order line.
+    tier: experimental
+    owner: finance
+    domain: sales
+
   - name: average_order_value
     type: ratio
     numerator: revenue
@@ -52,6 +61,17 @@ metrics:
     owner: finance
     domain: sales
     synonyms: [aov]
+
+  # A ratio whose halves read different rows: only the numerator carries a filter. Worded to stay
+  # out of the discovery golden phrasings.
+  - name: online_takings_ratio
+    type: ratio
+    numerator: web_revenue
+    denominator: order_count
+    description: Online takings divided by all checkouts.
+    tier: experimental
+    owner: finance
+    domain: sales
 
   - name: gross_revenue
     type: simple
