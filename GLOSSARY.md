@@ -35,6 +35,11 @@ entities, dimensions and measures.
 | `primary` / `unique` ↔ `primary` / `unique` | one-to-one | yes |
 | `foreign` ↔ `foreign`, with no unique side | many-to-many | no — it fans out and double-counts |
 
+**Unreconciled** — rows a join could not match: an empty key, or a key naming a row the joined
+table does not have. An answer reports them per joined entity as `rows`, `empty_key_rows` and the
+metric's `value` over just those rows, counted over the whole scan before grouping and the row
+limit.
+
 **Dimension** — a cut. `categorical` dimensions group by value; `time` dimensions carry a
 **time granularity**.
 

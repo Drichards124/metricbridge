@@ -41,6 +41,8 @@ _AGGREGATES = {
     "average": exp.Avg,
 }
 _COMPARISONS = {"=": exp.EQ, "!=": exp.NEQ, "<": exp.LT, "<=": exp.LTE, ">": exp.GT, ">=": exp.GTE}
+# Totals per joined entity, carried on every row: accounting for the answer, not part of it.
+UNRECONCILED_SUFFIXES = ("__unreconciled_rows", "__empty_key_rows", "__unreconciled_value")
 
 
 @dataclass(frozen=True)
@@ -178,6 +180,67 @@ def _null_key_case(base: SemanticModel, entity: str, alias: str) -> exp.Expressi
     )
 
 
+def _unmatched(manifest: SemanticManifest, scan: _Scan, entity: str) -> exp.Expression:
+    """No joined row matched: tested on the joined table's key, not the fact's. A key naming a
+    customer who does not exist is not empty, but it matches nothing all the same."""
+    target = manifest.semantic_models[scan.joins[entity]]
+    key = next(e for e in target.entities if e.name == entity)
+    return exp.Is(this=exp.column(key.expr, table=entity), expression=exp.Null())
+
+
+def _totals(
+    manifest: SemanticManifest, scan: _Scan, measure: Measure, dialect: str, *, label: str = ""
+) -> tuple[exp.Select, list[str]]:
+    """Over the whole scan, before grouping and the limit: per joined entity, the rows no joined row
+    matched, how many of those had an empty key, and the measure over just those rows.
+    """
+    projections: list[exp.Expression] = []
+    columns: list[str] = []
+    for entity in sorted(scan.joins):
+        unmatched = _unmatched(manifest, scan, entity)
+        rows = exp.Case(ifs=[exp.If(this=unmatched, true=exp.Literal.number(1))])
+        rows.set("default", exp.Literal.number(0))
+        value = exp.Case(
+            ifs=[
+                exp.If(
+                    this=unmatched.copy(),
+                    true=_qualify(parse_one(measure.expr, dialect=dialect), scan.alias),
+                )
+            ]
+        )
+        if measure.agg == "count_distinct":
+            aggregated = exp.Count(this=exp.Distinct(expressions=[value]))
+        else:
+            aggregated = _AGGREGATES[measure.agg](this=value)
+        projections += [
+            exp.alias_(exp.Sum(this=rows), f"{entity}{label}__unreconciled_rows"),
+            exp.alias_(
+                exp.Sum(this=_null_key_case(scan.base, entity, scan.alias)),
+                f"{entity}{label}__empty_key_rows",
+            ),
+            exp.alias_(aggregated, f"{entity}{label}__unreconciled_value"),
+        ]
+        columns += [f"{entity}{label}{suffix}" for suffix in UNRECONCILED_SUFFIXES]
+    return _apply(exp.select(*projections), manifest, scan), columns
+
+
+def _with_totals(
+    query: exp.Select, columns: list[str], totals: exp.Select, total_columns: list[str]
+) -> tuple[exp.Select, list[str]]:
+    """Carry the totals on every row of the answer. The answer's own CTEs move to the top, so the
+    statement stays one flat WITH list rather than a CTE nested inside another."""
+    ctes = query.args.get("with_")
+    query.set("with_", None)
+    outer = exp.select(
+        *[exp.column(name, table="answer") for name in columns],
+        *[exp.column(name, table="totals") for name in total_columns],
+    )
+    outer = outer.from_("answer").join(exp.Join(this=exp.to_table("totals"), kind="CROSS"))
+    for cte in ctes.expressions if ctes is not None else ():
+        outer = outer.with_(cte.alias, as_=cte.this)
+    return outer.with_("answer", as_=query).with_("totals", as_=totals), columns + total_columns
+
+
 def _build_scan(
     manifest: SemanticManifest,
     resolved: Resolved,
@@ -296,11 +359,6 @@ def _compile_simple(
 
     projections.append(exp.alias_(_aggregate(measure, scan.alias, dialect), resolved.metric.name))
     columns.append(resolved.metric.name)
-    for entity in sorted(scan.joins):
-        name = f"{entity}__null_key_rows"
-        counted = exp.Sum(this=_null_key_case(scan.base, entity, scan.alias))
-        projections.append(exp.alias_(counted, name))
-        columns.append(name)
 
     query = _apply(exp.select(*projections), manifest, scan)
     if groups:
@@ -308,7 +366,10 @@ def _compile_simple(
     for index, clause in enumerate(resolved.having_filters, start=len(resolved.where_filters)):
         aggregate = _aggregate(measure, scan.alias, dialect)
         query = query.having(_predicate(aggregate, clause, f"filter_{index}", parameters))
-    return query, columns
+    if not scan.joins:
+        return query, columns
+    totals, total_columns = _totals(manifest, scan, measure, dialect)
+    return _with_totals(query, columns, totals, total_columns)
 
 
 def _compile_snapshot(
@@ -351,6 +412,11 @@ def _compile_snapshot(
         inner.append(
             exp.alias_(_null_key_case(scan.base, entity, scan.alias), f"{entity}__null_key")
         )
+        unmatched = exp.Case(
+            ifs=[exp.If(this=_unmatched(manifest, scan, entity), true=exp.Literal.number(1))],
+            default=exp.Literal.number(0),
+        )
+        inner.append(exp.alias_(unmatched, f"{entity}__unmatched"))
     window = exp.Window(
         this=exp.RowNumber(),
         partition_by=partition_by,
@@ -366,10 +432,6 @@ def _compile_snapshot(
         exp.alias_(_AGGREGATES[measure.agg](this=exp.column("value")), resolved.metric.name)
     )
     columns = [*keys, resolved.metric.name]
-    for entity in sorted(scan.joins):
-        name = f"{entity}__null_key_rows"
-        outer.append(exp.alias_(exp.Sum(this=exp.column(f"{entity}__null_key")), name))
-        columns.append(name)
 
     query = (
         exp.select(*outer)
@@ -378,7 +440,29 @@ def _compile_snapshot(
     )
     if keys:
         query = query.group_by(*[exp.column(key) for key in keys])
-    return query.with_("ranked", as_=ranked), columns
+    if not scan.joins:
+        return query.with_("ranked", as_=ranked), columns
+
+    # The totals read only the rows chosen as each period's snapshot: those are what the answer
+    # adds up, and a mid-month snapshot of an unknown product is not month-end stock.
+    chosen = exp.EQ(this=exp.column("position"), expression=exp.Literal.number(1))
+    totals_projections: list[exp.Expression] = []
+    total_columns: list[str] = []
+    for entity in sorted(scan.joins):
+        flagged = exp.EQ(this=exp.column(f"{entity}__unmatched"), expression=exp.Literal.number(1))
+        value = exp.Case(ifs=[exp.If(this=flagged, true=exp.column("value"))])
+        totals_projections += [
+            exp.alias_(
+                exp.Sum(this=exp.column(f"{entity}__unmatched")), f"{entity}__unreconciled_rows"
+            ),
+            exp.alias_(
+                exp.Sum(this=exp.column(f"{entity}__null_key")), f"{entity}__empty_key_rows"
+            ),
+            exp.alias_(_AGGREGATES[measure.agg](this=value), f"{entity}__unreconciled_value"),
+        ]
+        total_columns += [f"{entity}{suffix}" for suffix in UNRECONCILED_SUFFIXES]
+    totals = exp.select(*totals_projections).from_("ranked").where(chosen)
+    return _with_totals(query.with_("ranked", as_=ranked), columns, totals, total_columns)
 
 
 def _interval(count: int, granularity: str) -> exp.Expression:
@@ -417,6 +501,9 @@ def _compile_cumulative(
         if resolved.dimensions:
             query = query.group_by(*[_column_of(resolved, d) for d in resolved.dimensions])
         columns = [*(d.requested for d in resolved.dimensions), metric.name]
+        if scan.joins:
+            totals, total_columns = _totals(manifest, scan, measure, dialect)
+            query, columns = _with_totals(query, columns, totals, total_columns)
         return query, columns, window_start
 
     anchors = _periods_in(resolved.date_range.start_date, end_exclusive, grain)
@@ -485,6 +572,10 @@ def _compile_cumulative(
         .group_by(*groups)
     )
     query = query.with_("periods", as_=periods).with_("measured", as_=measured)
+    if measured_scan.joins:
+        # Over the lookback too: an unmatched row from before the range still shapes the answer.
+        totals, total_columns = _totals(manifest, measured_scan, measure, dialect)
+        query, columns = _with_totals(query, columns, totals, total_columns)
     return query, columns, scan_start
 
 
@@ -496,6 +587,7 @@ def _compile_ratio(
     keys += [d.requested for d in resolved.dimensions]
 
     legs: dict[str, exp.Select] = {}
+    leg_totals: dict[str, tuple[exp.Select, list[str]]] = {}
     sides = (("numerator", resolved.metric.numerator), ("denominator", resolved.metric.denominator))
     for side, name in sides:
         leg_metric = manifest.metrics[name]
@@ -520,6 +612,8 @@ def _compile_ratio(
         projections.append(exp.alias_(_aggregate(measure, scan.alias, dialect), "value"))
         leg = _apply(exp.select(*projections), manifest, scan)
         legs[side] = leg.group_by(*groups) if groups else leg
+        if scan.joins:
+            leg_totals[side] = _totals(manifest, scan, measure, dialect, label=f"__{side}")
 
     ratio = exp.Div(
         this=exp.func("COALESCE", exp.column("value", table="numerator"), exp.Literal.number(0)),
@@ -545,7 +639,23 @@ def _compile_ratio(
 
     query = query.with_("numerator", as_=legs["numerator"])
     query = query.with_("denominator", as_=legs["denominator"])
-    return query, [*keys, resolved.metric.name]
+    columns = [*keys, resolved.metric.name]
+    if not leg_totals:
+        return query, columns
+
+    # Each half is accounted for over its own scan: the halves can filter different rows, so one
+    # count for the ratio would be true of one half and false of the other.
+    carried: list[exp.Expression] = []
+    total_columns: list[str] = []
+    for side, (totals, names) in leg_totals.items():
+        query = query.with_(f"{side}_totals", as_=totals)
+        carried += [exp.column(name, table=f"{side}_totals") for name in names]
+        total_columns += names
+    tables = [f"{side}_totals" for side in leg_totals]
+    combined = exp.select(*carried).from_(tables[0])
+    for table in tables[1:]:
+        combined = combined.join(exp.Join(this=exp.to_table(table), kind="CROSS"))
+    return _with_totals(query, columns, combined, total_columns)
 
 
 def compile_query(
@@ -574,7 +684,9 @@ def compile_query(
     # The limit keeps whichever rows sort first, so the order is always total: the request's own
     # order, then every group key, with NULL last on every engine.
     requested = [name for name, _ in resolved.order_by]
-    keys = [c for c in columns if c != resolved.metric.name and not c.endswith("__null_key_rows")]
+    keys = [
+        c for c in columns if c != resolved.metric.name and not c.endswith(UNRECONCILED_SUFFIXES)
+    ]
     ordering = [*resolved.order_by, *((key, "asc") for key in keys if key not in requested)]
     for name, direction in ordering:
         query = query.order_by(

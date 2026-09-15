@@ -72,11 +72,14 @@ dimensions, time_grain, filters, order_by and row_limit. The gateway builds, che
 query itself.
 
 The reply states every absence instead of leaving a gap. `missing_periods` lists periods the data \
-never produced; they are absent, not zero. `null_key_rows` counts, per joined entity, rows whose \
-join key was empty. It does not count keys that match no row in the joined table, so `{}` does not \
-mean every row reconciled. `null` means nothing was counted: either this metric shape does not \
-count, or the row limit cut the answer off. `row_limit_reached` means rows were cut off, so \
-nothing is claimed about the rest. Exact decimals come back as strings."""
+never produced; they are absent, not zero. `unreconciled` accounts, per joined entity, for the \
+rows the join could not match — an empty key or a key naming nothing — as `rows`, \
+`empty_key_rows` and the metric's `value` over just those rows; a ratio gives one breakdown per \
+half. The totals cover every row the query read over `unreconciled_window`, before grouping and \
+the row limit; a trailing metric's window includes its lookback. A filter on a joined dimension \
+removes unmatched rows before they are counted. `{}` means nothing was joined; `null` means no \
+row came back to carry the totals. `row_limit_reached` means rows were cut off, so \
+`missing_periods` is null while the totals still hold. Exact decimals come back as strings."""
 
 # Raised by discovery rather than by a contract rule, so it lives here, not in the rule registry.
 DISCOVERY_CODES = frozenset({"no_match"})

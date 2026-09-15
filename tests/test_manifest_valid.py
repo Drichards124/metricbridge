@@ -21,7 +21,9 @@ def test_loads_every_file_in_a_directory():
     assert set(manifest.metrics) == {
         "revenue",
         "order_count",
+        "average_line_value",
         "average_order_value",
+        "online_takings_ratio",
         "gross_revenue",
         "web_revenue",
         "enterprise_revenue",

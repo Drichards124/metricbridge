@@ -55,7 +55,10 @@ def test_a_missing_table_is_refused_once_not_per_column(manifest, tmp_path):
     ("change", "path"),
     [
         ("ALTER TABLE storefront.dim_customers DROP COLUMN region", "customers.dimensions.region"),
-        ("ALTER TABLE storefront.fct_order_lines DROP COLUMN amount", "orders.measures.revenue"),
+        (
+            "ALTER TABLE storefront.fct_order_lines DROP COLUMN order_id",
+            "orders.measures.order_count",
+        ),
         (
             "ALTER TABLE storefront.fct_order_lines DROP COLUMN customer_id",
             "orders.entities.customer",
@@ -138,7 +141,6 @@ SOLE_READERS = {
     ("storefront.dim_customers", "region"): "customers.dimensions.region",
     ("storefront.dim_customers", "segment"): "customers.dimensions.segment",
     ("storefront.fct_order_lines", "channel"): "orders.dimensions.channel",
-    ("storefront.fct_order_lines", "amount"): "orders.measures.revenue",
     ("storefront.fct_order_lines", "order_id"): "orders.measures.order_count",
     ("logistics.fct_shipments", "carrier"): "shipments.dimensions.carrier",
     ("warehouse.fct_inventory_daily", "warehouse"): "inventory_snapshots.dimensions.warehouse",
