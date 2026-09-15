@@ -20,6 +20,7 @@ request is rejected, so the case cannot arise · **unguarded** — known, not ye
 | `percentile` / `median` | Not additive, and engines disagree on method | refused | not supported in this version (D9) |
 | Ratio computed as an average of ratios | The average of daily ratios is not the period ratio | guarded | `tests/test_compiler.py::TestRatioMetrics::test_a_ratio_divides_two_aggregates_after_grouping` |
 | Zero denominator reported as zero | "No orders" reads as "£0 average order value" | guarded | `tests/test_compiler.py::TestRatioMetrics::test_a_zero_denominator_yields_null_not_zero` |
+| Ratio loses its value in a blank group | The halves are joined on the group keys; with `=`, a NULL key never matches, the numerator is lost and the ratio reads as 0 — an order with no channel averaged £0 instead of £30 | guarded | halves join with `IS NOT DISTINCT FROM` (`tests/test_engine.py::TestAnswers::test_a_ratio_keeps_its_value_in_the_group_with_no_value`) |
 
 ## Joins
 

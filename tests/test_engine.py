@@ -154,6 +154,23 @@ class TestAnswers:
         }
         assert "null_key_rows" not in result
 
+    @pytest.mark.parametrize(
+        ("cut", "values"),
+        [("channel", ["store", "web"]), ("customer__region", ["AMER", "EMEA"])],
+    )
+    def test_a_ratio_keeps_its_value_in_the_group_with_no_value(
+        self, manifest, engine, cut, values
+    ):
+        """Order 3 has no channel and no customer: £30 over one order is 30, not 0. A ratio joins
+        its two halves on the group keys, and `NULL = NULL` is never true, so the blank group's
+        numerator was lost and read as zero."""
+        result = answer(manifest, engine, metric="average_order_value", dimensions=[cut])
+        assert result["rows"] == [
+            {cut: values[0], "average_order_value": 80.0},
+            {cut: values[1], "average_order_value": 150.0},
+            {cut: None, "average_order_value": 30.0},
+        ]
+
     def test_rows_no_joined_row_matches_are_totalled_per_entity(self, manifest, tmp_path):
         """An empty key and a key naming a customer who does not exist both land in the blank
         region. Both are unreconciled; the empty one is also counted apart, because it is a

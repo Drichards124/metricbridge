@@ -628,7 +628,9 @@ def _compile_ratio(
     if keys:
         condition = None
         for key in keys:
-            equality = exp.EQ(
+            # NULL-safe: a blank group is a group. With `=`, `NULL = NULL` is never true, its
+            # numerator is lost, and COALESCE reports the ratio as zero.
+            equality = exp.NullSafeEQ(
                 this=exp.column(key, table="denominator"),
                 expression=exp.column(key, table="numerator"),
             )
