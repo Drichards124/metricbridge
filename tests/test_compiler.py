@@ -269,7 +269,8 @@ class TestRatioMetrics:
         assert "GROUP BY DATE_TRUNC('MONTH', orders.order_date), orders.channel" in sql
         assert (
             "FROM denominator LEFT JOIN numerator "
-            "ON denominator.period = numerator.period AND denominator.channel = numerator.channel"
+            "ON denominator.period IS NOT DISTINCT FROM numerator.period "
+            "AND denominator.channel IS NOT DISTINCT FROM numerator.channel"
         ) in sql
         assert "SELECT denominator.period AS period, denominator.channel AS channel" in sql
 

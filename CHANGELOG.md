@@ -53,7 +53,8 @@ All notable changes to MetricBridge are documented here. The format follows
   both the output window and the scan window.
 
 - Ratio metrics compile to two aggregates divided after grouping, joined on every group key. A zero
-  denominator yields null rather than zero.
+  denominator yields null rather than zero, and a group with a blank key — no channel, no known
+  customer — keeps its ratio rather than reading as zero.
 - Snapshot metrics with a declared roll-up compile to one row per group per period, chosen by the
   declared window (`min` or `max`), then aggregated — month-end stock rather than a sum of days.
 
