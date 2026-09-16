@@ -361,9 +361,11 @@ class TestDefinitionConstraints:
         assert [f.field for f in resolved.where_filters] == ["customer__region"]
 
 
-# Order lines join to orders, a table with its own partition column, and to products, which has
-# none. The compiled join to orders could not bound that table's scan on its own date without
-# dropping matching lines, so the guardrail would refuse it: its cuts are not offered at all.
+# Order lines join to orders, a table with its own partition column and its own measures; to
+# products, which has neither; and to promotions, which is partitioned but has no measures. The
+# compiled join to orders could not bound that table's scan on its own date without dropping
+# matching lines, so the guardrail would refuse it: its cuts are not offered at all. Promotions is
+# a different case — the guardrail bounds only models that have measures, so its cuts stay on offer.
 PARTITIONED_JOIN = textwrap.dedent("""\
     semantic_models:
       - name: order_lines
@@ -372,6 +374,7 @@ PARTITIONED_JOIN = textwrap.dedent("""\
           - {name: line, type: primary, expr: line_id}
           - {name: order, type: foreign, expr: order_id}
           - {name: product, type: foreign, expr: product_id}
+          - {name: promotion, type: foreign, expr: promotion_id}
         dimensions:
           - {name: ship_date, type: time, time_granularity: day, is_partition: true}
         measures:
@@ -391,6 +394,13 @@ PARTITIONED_JOIN = textwrap.dedent("""\
           - {name: product, type: primary, expr: product_id}
         dimensions:
           - {name: brand, type: categorical}
+      - name: promotions
+        table: shop.promotions
+        entities:
+          - {name: promotion, type: primary, expr: promotion_id}
+        dimensions:
+          - {name: active_date, type: time, time_granularity: day, is_partition: true}
+          - {name: promotion_name, type: categorical}
     metrics:
       - {name: line_revenue, type: simple, measure: line_revenue, description: Line revenue.}
     """)
@@ -410,14 +420,27 @@ class TestCutsThroughAPartitionedModel:
 
     def test_the_signature_does_not_offer_them(self, lines):
         sig = signature(lines, "line_revenue")
-        assert [d["name"] for d in sig["dimensions"]] == ["ship_date", "product__brand"]
+        assert [d["name"] for d in sig["dimensions"]] == [
+            "ship_date",
+            "product__brand",
+            "promotion__active_date",
+            "promotion__promotion_name",
+        ]
         assert "order__priority" not in sig["filters"]["fields"]
 
     @pytest.mark.parametrize("requested", ["order__priority", "priority", "order__order_date"])
     def test_a_request_for_one_is_refused_as_an_unknown_dimension(self, lines, requested):
         refusal = self.refused(lines, dimensions=[requested])
         assert refusal.code == "unknown_dimension"
-        assert refusal.valid_alternatives == ["ship_date", "product__brand"]
+        # Compared as a set: the order is the ranking (D13), which depends on what was asked for,
+        # and a requested date ranks the other date first. What matters here is which cuts are
+        # offered in place of the refused one.
+        assert sorted(refusal.valid_alternatives) == [
+            "product__brand",
+            "promotion__active_date",
+            "promotion__promotion_name",
+            "ship_date",
+        ]
 
     def test_a_filter_on_one_is_refused_as_an_unknown_field(self, lines):
         refusal = self.refused(
@@ -426,6 +449,14 @@ class TestCutsThroughAPartitionedModel:
         assert refusal.code == "unknown_filter_field"
         assert "order__priority" not in refusal.valid_alternatives
         assert "product__brand" in refusal.valid_alternatives
+
+    def test_a_partitioned_model_with_no_measures_still_offers_its_cuts(self, lines):
+        """The rule tracks the guardrail, which bounds only models that have measures: a
+        partitioned table with none is bounded by the fact it joins to, so its cuts are
+        answerable and must stay on offer. Skipping every partitioned model would hide them."""
+        offered = [d["name"] for d in signature(lines, "line_revenue")["dimensions"]]
+        assert "promotion__promotion_name" in offered
+        assert "promotion__active_date" in offered
 
     def test_every_cut_the_signature_offers_compiles_to_a_statement_the_guardrail_accepts(
         self, lines

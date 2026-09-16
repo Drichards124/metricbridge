@@ -87,6 +87,14 @@ All notable changes to MetricBridge are documented here. The format follows
 - `get_metric_signature` data: the exhaustive contract for one metric — authorised cuts (with their
   qualified names), supported grains, the mandatory date bound and its cap, filter operators,
   ordering and row limits.
+- A cut reached through a join to a semantic model that has both its own measures and its own
+  partition dimension (for example an order's priority, cut from order lines) is not offered: that
+  table's scan cannot be bounded on its own date without dropping matching rows, so every such
+  request would be refused with `guardrail_violation`. `get_metric_signature` omits it, requesting
+  it returns `unknown_dimension` and filtering on it returns `unknown_filter_field`, both with the
+  cuts that are available, and a metric whose own `filters` name one is refused when the manifest
+  loads. Cuts through joins to models with no measures, or with no partition dimension, are
+  offered as before.
 - Measures take `additive: true|false`; a declared roll-up (`non_additive_dimension`) requires
   `additive: false`. Metrics take `replaced_by` for deprecations.
 - Metrics can declare filters that are part of their definition and apply to every query, listed in
@@ -94,13 +102,3 @@ All notable changes to MetricBridge are documented here. The format follows
 - Manifests are validated when loaded. Every problem is reported at once with its file and field
   path, including unknown keys, many-to-many joins, missing partition dimensions and features not
   supported in this version.
-
-### Fixed
-
-- A dimension reached through a join to a semantic model that has its own partition dimension (for
-  example an order's priority, cut from order lines) is no longer listed by `get_metric_signature`.
-  Every such request was refused with `guardrail_violation`, so the cut could never be answered.
-  Requesting it now returns `unknown_dimension`, and filtering on it returns
-  `unknown_filter_field`, both with the cuts that are available. A metric whose own `filters` name
-  such a dimension is refused when the manifest loads. Cuts through joins to models without a
-  partition dimension are unchanged.
