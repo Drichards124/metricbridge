@@ -383,6 +383,44 @@ class TestCumulativeMetrics:
         assert "measured.occurred_at < periods.period + INTERVAL 1 MONTH" in sql
         assert "INTERVAL 11" not in sql
 
+    @pytest.mark.parametrize(
+        "dialect, window_start, next_period",
+        [
+            ("duckdb", "DATE_TRUNC('MONTH', periods.period)", "periods.period + INTERVAL 1 DAY"),
+            (
+                "postgres",
+                "DATE_TRUNC('MONTH', periods.period)",
+                "periods.period + INTERVAL '1 DAY'",
+            ),
+            (
+                "bigquery",
+                "DATE_TRUNC(periods.period, MONTH)",
+                "DATE_ADD(periods.period, INTERVAL 1 DAY)",
+            ),
+            ("snowflake", "DATE_TRUNC('MONTH', periods.period)", "DATEADD(DAY, 1, periods.period)"),
+        ],
+    )
+    def test_grain_to_date_by_day_starts_at_the_first_of_the_month(
+        self, manifest, dialect, window_start, next_period
+    ):
+        sql = flat(
+            compiled(manifest, dialect, metric="revenue_month_to_date", time_grain="day").sql
+        )
+        assert (
+            f"ON measured.occurred_at >= {window_start} AND measured.occurred_at < {next_period}"
+            in sql
+        )
+
+    def test_grain_to_date_by_week_starts_at_the_first_of_the_month_the_week_ends_in(
+        self, manifest
+    ):
+        sql = flat(compiled(manifest, metric="revenue_month_to_date", time_grain="week").sql)
+        assert (
+            "ON measured.occurred_at >= "
+            "DATE_TRUNC('MONTH', periods.period + INTERVAL 1 WEEK - INTERVAL 1 DAY) "
+            "AND measured.occurred_at < periods.period + INTERVAL 1 WEEK"
+        ) in sql
+
     def test_without_a_grain_one_window_ending_at_the_range_end(self, manifest):
         query = compiled(manifest, metric="trailing_12m_revenue")
         sql = flat(query.sql)
@@ -453,6 +491,58 @@ class TestCumulativeAgainstDuckDB:
         ]
         assert periods == ["2026-09"]  # October is missing, not 900
         assert query.expected_periods == [date(2026, 9, 1), date(2026, 10, 1)]
+
+    def _revenue_on(self, rows):
+        connection = duckdb.connect()
+        connection.execute(
+            "CREATE SCHEMA billing; "
+            "CREATE TABLE billing.fct_subscription_revenue_daily "
+            "(revenue_date DATE, amount INTEGER, subscription_id INTEGER, customer_id INTEGER)"
+        )
+        connection.executemany(
+            "INSERT INTO billing.fct_subscription_revenue_daily VALUES (?, ?, 1, 1)", rows
+        )
+        return connection
+
+    def test_grain_to_date_at_a_finer_grain_counts_from_the_start_of_the_month(self, manifest):
+        """Month-to-date asked by day totals everything since the first of the day's month, not the
+        day alone — including days before a mid-month request start."""
+        connection = self._revenue_on(
+            [
+                ("2026-08-31", 1000),  # last month: never counted
+                ("2026-09-01", 10),  # before the request start, still month-to-date
+                ("2026-09-02", 5),
+                ("2026-09-03", 1),
+                ("2026-09-05", 23),  # 4 September has no rows, so its anchor drops (Phase 2)
+            ]
+        )
+        query = compiled(
+            manifest,
+            metric="revenue_month_to_date",
+            time_grain="day",
+            date_range={"start_date": "2026-09-02", "end_date": "2026-09-05"},
+        )
+        result = connection.execute(query.sql, query.parameters).fetchall()
+        by_day = {row[0].strftime("%Y-%m-%d"): row[1] for row in result}
+        assert by_day == {"2026-09-02": 15, "2026-09-03": 16, "2026-09-05": 39}
+        assert query.scan_window[0] == date(2026, 9, 1)
+
+    def test_grain_to_date_by_week_is_month_to_date_on_the_last_day_of_the_week(self, manifest):
+        """A week's value is month-to-date as it stood on the week's last day, as a daily answer
+        would read it then. The week of Monday 31 August ends on 6 September, so it counts from
+        1 September: 31 August drops out even though it falls inside that week."""
+        connection = self._revenue_on(
+            [("2026-08-24", 100), ("2026-08-31", 1000), ("2026-09-01", 10), ("2026-09-08", 7)]
+        )
+        query = compiled(
+            manifest,
+            metric="revenue_month_to_date",
+            time_grain="week",
+            date_range={"start_date": "2026-08-24", "end_date": "2026-09-13"},
+        )
+        result = connection.execute(query.sql, query.parameters).fetchall()
+        by_week = {row[0].strftime("%Y-%m-%d"): row[1] for row in result}
+        assert by_week == {"2026-08-24": 100, "2026-08-31": 10, "2026-09-07": 17}
 
     def test_row_multiplication_at_daily_grain_is_bounded_by_the_window(self, manifest):
         """A range join replicates each row once per anchor it falls into. At daily grain with a
