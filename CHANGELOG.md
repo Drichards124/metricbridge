@@ -50,7 +50,11 @@ All notable changes to MetricBridge are documented here. The format follows
 
 - Cumulative metrics compile: trailing windows and grain-to-date, as anchor periods joined to the
   rows their window covers. The scan is widened to cover the lookback, and `CompiledQuery` reports
-  both the output window and the scan window.
+  both the output window and the scan window. A grain-to-date metric asked at a finer grain counts
+  from the start of its calendar period, so month-to-date by day totals everything from the first
+  of that day's month, including days before the requested start date. A week that crosses into a
+  new month reads as month-to-date on the week's last day, so the days it covers in the previous
+  month are not counted.
 
 - Ratio metrics compile to two aggregates divided after grouping, joined on every group key. A zero
   denominator yields null rather than zero, and a group with a blank key — no channel, no known

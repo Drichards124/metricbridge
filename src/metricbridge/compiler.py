@@ -30,6 +30,7 @@ from .manifest import (
     metric_sources,
     resolve,
 )
+from .manifest.model import GRANULARITIES
 
 DIALECTS = ("duckdb", "postgres", "bigquery", "snowflake", "clickhouse")
 
@@ -535,18 +536,25 @@ def _compile_cumulative(
 
     period_column = exp.column("period", table="periods")
     occurred = exp.column("occurred_at", table="measured")
+    step_unit, one = _interval(1, grain)
+    next_period = exp.DateAdd(this=period_column, expression=one, unit=step_unit)
     if metric.window and metric.window.granularity == grain:
         unit, amount = _interval(metric.window.count - 1, metric.window.granularity)
         window_start = exp.DateSub(this=period_column, expression=amount, unit=unit)
     elif metric.window:
         unit, amount = _interval(metric.window.count, metric.window.granularity)
         back = exp.DateSub(this=period_column, expression=amount, unit=unit)
-        step_unit, one = _interval(1, grain)
         window_start = exp.DateAdd(this=back, expression=one, unit=step_unit)
+    elif GRANULARITIES.index(grain) < GRANULARITIES.index(metric.grain_to_date):
+        # Month-to-date by day counts from the first of the day's month, not from the day. A week
+        # crossing into a new month reads as month-to-date on its last day, as a daily answer would.
+        last_day = period_column
+        if grain != "day":
+            day_unit, one_day = _interval(1, "day")
+            last_day = exp.DateSub(this=next_period, expression=one_day, unit=day_unit)
+        window_start = exp.DateTrunc(this=last_day, unit=exp.Literal.string(metric.grain_to_date))
     else:
         window_start = period_column
-    step_unit, one = _interval(1, grain)
-    next_period = exp.DateAdd(this=period_column, expression=one, unit=step_unit)
 
     outer: list[exp.Expression] = [exp.alias_(period_column, "period")]
     groups: list[exp.Expression] = [period_column]

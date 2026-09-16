@@ -6,20 +6,13 @@ under it still differ from their reference, which stays as the reference compute
 
 ## Anchor dropping in inactive periods
 
-- DuckDB · storefront/trailing_12m_revenue_by_month
-  - row count: MetricBridge 8 rows, reference 9 rows
-  - reference row 2 (period='2026-03-01'): missing from MetricBridge
-
-## Grain-to-date window starts at the period
-
 - DuckDB · storefront/revenue_month_to_date_by_day
   - row count: MetricBridge 5 rows, reference 10 rows
   - reference row 1 (period='2026-09-02'): missing from MetricBridge
-  - row 2, revenue_month_to_date: MetricBridge 1, reference 16
   - reference row 3 (period='2026-09-04'): missing from MetricBridge
-  - row 4, revenue_month_to_date: MetricBridge 23, reference 39
   - reference row 5 (period='2026-09-06'): missing from MetricBridge
-  - row 6, revenue_month_to_date: MetricBridge 10, reference 49
-  - row 7, revenue_month_to_date: MetricBridge 18, reference 67
   - reference row 8 (period='2026-09-09'): missing from MetricBridge
   - reference row 9 (period='2026-09-10'): missing from MetricBridge
+- DuckDB · storefront/trailing_12m_revenue_by_month
+  - row count: MetricBridge 8 rows, reference 9 rows
+  - reference row 2 (period='2026-03-01'): missing from MetricBridge

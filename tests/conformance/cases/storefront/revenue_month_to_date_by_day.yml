@@ -5,6 +5,10 @@ request:
   date_range: {start_date: "2026-09-01", end_date: "2026-09-10"}
   time_grain: day
 # revenue_month_to_date: for each day, recognised revenue from the first of its month to that day.
+# Every value MetricBridge returns agrees. What still differs is the rows it does not return: five
+# of these ten days have no revenue of their own, so they never become anchors and drop out, while
+# the reference keeps them. `missing_periods` names them in the answer. Fixed by time spines in
+# Phase 2; until then this case is the corpus's guard on that gap, on every engine.
 reference_sql: |
   WITH anchors AS (
     SELECT CAST(generate_series AS DATE) AS period
@@ -17,4 +21,4 @@ reference_sql: |
    AND r.revenue_date < anchors.period + INTERVAL 1 DAY
   GROUP BY anchors.period
   ORDER BY anchors.period
-known_divergence: Grain-to-date window starts at the period
+known_divergence: Anchor dropping in inactive periods

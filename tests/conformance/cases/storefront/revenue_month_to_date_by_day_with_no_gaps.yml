@@ -1,0 +1,21 @@
+id: revenue_month_to_date_by_day_with_no_gaps
+catalog: storefront
+request:
+  metric: revenue_month_to_date
+  date_range: {start_date: "2026-08-09", end_date: "2026-08-18"}
+  time_grain: day
+# Every day in this range has revenue of its own, so no anchor drops and the whole answer must
+# agree, value for value. The range starts mid-month on purpose: month-to-date reaches back to the
+# first of August, before the requested start, so a window that began at the day would read low.
+reference_sql: |
+  WITH anchors AS (
+    SELECT CAST(generate_series AS DATE) AS period
+    FROM generate_series(DATE '2026-08-09', DATE '2026-08-18', INTERVAL 1 DAY)
+  )
+  SELECT anchors.period, SUM(r.amount) AS revenue_month_to_date
+  FROM anchors
+  JOIN billing.fct_subscription_revenue_daily r
+    ON r.revenue_date >= date_trunc('month', anchors.period)
+   AND r.revenue_date < anchors.period + INTERVAL 1 DAY
+  GROUP BY anchors.period
+  ORDER BY anchors.period
