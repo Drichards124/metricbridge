@@ -287,32 +287,31 @@ class TestRatioMetrics:
 
 class TestSnapshotMetrics:
     def test_a_declared_rollup_takes_the_periods_last_snapshot(self, manifest):
-        """Summing daily stock counts the same pallet once per day; month-end is one row per
-        product, chosen by the declared window."""
+        """Summing daily stock counts the same pallet once per day; month-end is every row on each
+        product's last snapshot day, chosen by the declared window."""
         query = compiled(manifest, metric="inventory_on_hand", time_grain="month")
         assert flat(query.sql) == (
-            "WITH ranked AS ("
+            "WITH snapshots AS ("
             "SELECT DATE_TRUNC('MONTH', inventory_snapshots.snapshot_date) AS period, "
             "inventory_snapshots.units AS value, "
-            "ROW_NUMBER() OVER ("
-            "PARTITION BY DATE_TRUNC('MONTH', inventory_snapshots.snapshot_date), "
-            "inventory_snapshots.product_id "
-            "ORDER BY inventory_snapshots.snapshot_date DESC) AS position "
+            "CASE WHEN inventory_snapshots.snapshot_date = MAX(inventory_snapshots.snapshot_date) "
+            "OVER (PARTITION BY DATE_TRUNC('MONTH', inventory_snapshots.snapshot_date), "
+            "inventory_snapshots.product_id) THEN 1 ELSE 0 END AS chosen "
             "FROM warehouse.fct_inventory_daily AS inventory_snapshots "
             "WHERE inventory_snapshots.snapshot_date >= $start_date "
             "AND inventory_snapshots.snapshot_date < $end_date"
             ") "
             "SELECT period, SUM(value) AS inventory_on_hand "
-            "FROM ranked WHERE position = 1 GROUP BY period "
+            "FROM snapshots WHERE chosen = 1 GROUP BY period "
             "ORDER BY period ASC "
             "LIMIT 100"
         )
 
     def test_the_window_choice_decides_which_snapshot_wins(self, manifest):
         opening = flat(compiled(manifest, metric="opening_stock", time_grain="month").sql)
-        assert "ORDER BY inventory_snapshots.snapshot_date ASC) AS position" in opening
+        assert "snapshot_date = MIN(inventory_snapshots.snapshot_date) OVER" in opening
         closing = flat(compiled(manifest, metric="inventory_on_hand", time_grain="month").sql)
-        assert "ORDER BY inventory_snapshots.snapshot_date DESC) AS position" in closing
+        assert "snapshot_date = MAX(inventory_snapshots.snapshot_date) OVER" in closing
 
     def test_without_a_grain_the_latest_snapshot_in_the_range_is_taken(self, manifest):
         sql = flat(compiled(manifest, metric="inventory_on_hand").sql)
@@ -327,6 +326,8 @@ class TestSnapshotMetrics:
         )
         assert "inventory_snapshots.warehouse AS warehouse" in sql
         assert "GROUP BY period, warehouse" in sql
+        # The cut groups the chosen rows; it is not part of the choice, which is made per product.
+        assert "inventory_snapshots.product_id) THEN 1" in sql
 
 
 def test_every_metric_shape_compiles_to_one_parseable_statement(manifest):

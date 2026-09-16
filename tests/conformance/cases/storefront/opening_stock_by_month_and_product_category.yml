@@ -23,4 +23,3 @@ reference_sql: |
   WHERE snapshot_date = chosen
   GROUP BY period, category
   ORDER BY period, category NULLS LAST
-known_divergence: Snapshot keeps one row on the chosen day

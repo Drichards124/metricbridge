@@ -18,4 +18,3 @@ reference_sql: |
   WHERE snapshot_date = chosen
   GROUP BY period
   ORDER BY period
-known_divergence: Snapshot keeps one row on the chosen day

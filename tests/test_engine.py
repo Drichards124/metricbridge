@@ -275,15 +275,41 @@ class TestAnswers:
             }
         }
 
+    def test_a_snapshot_keeps_every_row_on_the_chosen_day(self, manifest, tmp_path):
+        """The choice is made per product: its last snapshot day in July. Product 1 is held in two
+        warehouses on 31 July, and both rows are month-end stock; its 15 July row in east is not.
+        Keeping one row per product would read 10 or 12, and which one is left to the engine."""
+        engine = seeded(
+            tmp_path,
+            "INSERT INTO warehouse.fct_inventory_daily VALUES "
+            "(1, '2026-07-15', 'east', 4), (1, '2026-07-31', 'north', 7), "
+            "(1, '2026-07-31', 'south', 5), (2, '2026-07-31', 'south', 3)",
+        )
+        july = {"start_date": "2026-07-01", "end_date": "2026-07-31"}
+        total = answer(
+            manifest, engine, metric="inventory_on_hand", date_range=july, time_grain="month"
+        )
+        assert total["rows"] == [{"period": "2026-07-01", "inventory_on_hand": 15}]
+        by_warehouse = answer(
+            manifest, engine, metric="inventory_on_hand", date_range=july, dimensions=["warehouse"]
+        )
+        assert by_warehouse["rows"] == [
+            {"warehouse": "north", "inventory_on_hand": 7},
+            {"warehouse": "south", "inventory_on_hand": 8},
+        ]
+
     def test_a_snapshot_counts_only_the_rows_it_chose(self, manifest, tmp_path):
         """Month-end stock reads the last snapshot per product. Product 99 does not exist and one
-        row has no product; the 100 units product 99 held on 10 July are not month-end stock."""
+        row has no product; the 100 units product 99 held on 10 July are not month-end stock. Both
+        products are held in two warehouses on 31 July, and every one of those rows is counted."""
         engine = seeded(
             tmp_path,
             "INSERT INTO storefront.dim_products VALUES (1, 'toys', 'EU')",
             "INSERT INTO warehouse.fct_inventory_daily VALUES "
             "(1, '2026-07-01', 'north', 5), (1, '2026-07-31', 'north', 7), "
+            "(1, '2026-07-31', 'south', 2), "
             "(99, '2026-07-10', 'north', 100), (99, '2026-07-31', 'north', 3), "
+            "(99, '2026-07-31', 'south', 4), "
             "(NULL, '2026-07-31', 'north', 2)",
         )
         result = answer(
@@ -295,10 +321,10 @@ class TestAnswers:
             time_grain="month",
         )
         assert result["rows"] == [
-            {"period": "2026-07-01", "product__category": "toys", "inventory_on_hand": 7},
-            {"period": "2026-07-01", "product__category": None, "inventory_on_hand": 5},
+            {"period": "2026-07-01", "product__category": "toys", "inventory_on_hand": 9},
+            {"period": "2026-07-01", "product__category": None, "inventory_on_hand": 9},
         ]
-        assert result["unreconciled"] == {"product": {"rows": 2, "empty_key_rows": 1, "value": 5}}
+        assert result["unreconciled"] == {"product": {"rows": 3, "empty_key_rows": 1, "value": 9}}
 
     def test_a_metric_with_no_joins_has_nothing_to_reconcile(self, manifest, engine):
         """`{}`: nothing was joined, so no row can have failed to match."""
