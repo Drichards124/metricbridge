@@ -55,8 +55,11 @@ All notable changes to MetricBridge are documented here. The format follows
 - Ratio metrics compile to two aggregates divided after grouping, joined on every group key. A zero
   denominator yields null rather than zero, and a group with a blank key — no channel, no known
   customer — keeps its ratio rather than reading as zero.
-- Snapshot metrics with a declared roll-up compile to one row per group per period, chosen by the
-  declared window (`min` or `max`), then aggregated — month-end stock rather than a sum of days.
+- Snapshot metrics with a declared roll-up count every row on the day the declared window (`min` or
+  `max`) chooses, then aggregate them — month-end stock rather than a sum of days. The day is
+  chosen per window grouping, so a product held in several warehouses on its last snapshot day
+  contributes all of them; a requested cut such as `warehouse` groups the counted rows and does not
+  change which day is chosen.
 
 - SQL compilation for simple metrics: one parameterised statement per request, rendered for DuckDB,
   Postgres, BigQuery, Snowflake and ClickHouse. Values are always bound, never interpolated.
@@ -91,11 +94,3 @@ All notable changes to MetricBridge are documented here. The format follows
 - Manifests are validated when loaded. Every problem is reported at once with its file and field
   path, including unknown keys, many-to-many joins, missing partition dimensions and features not
   supported in this version.
-
-### Fixed
-
-- Snapshot metrics with a declared roll-up (such as month-end stock) now count every row on the
-  chosen day. When a product was held in several warehouses on its last snapshot day, only one of
-  those rows was counted, so the figure read low and could differ between engines. The day is still
-  chosen per window grouping (per product); a requested cut such as `warehouse` groups the counted
-  rows and does not change which day is chosen.
